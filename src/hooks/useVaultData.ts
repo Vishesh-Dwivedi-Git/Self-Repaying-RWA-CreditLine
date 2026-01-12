@@ -1,0 +1,233 @@
+"use client";
+
+import { useReadContract, useReadContracts } from "wagmi";
+import { formatEther, formatUnits } from "viem";
+import {
+    CONTRACTS,
+    VAULT_MANAGER_ABI,
+    ORACLE_ABI,
+    ERC20_ABI,
+    TOKENS,
+} from "@/lib/contracts";
+
+// Types
+export interface VaultInfo {
+    collateral: bigint;
+    debt: bigint;
+    pendingYield: bigint;
+    healthFactor: bigint;
+    isActive: boolean;
+    isReady: boolean;
+}
+
+export interface FormattedVaultInfo {
+    collateralRaw: bigint;
+    collateral: string;
+    collateralUsd: number;
+    debtRaw: bigint;
+    debt: string;
+    pendingYieldRaw: bigint;
+    pendingYield: string;
+    healthFactor: number;
+    isActive: boolean;
+    isReady: boolean;
+}
+
+// Hook: Get vault info for a user
+export function useVaultInfo(address: `0x${string}` | undefined) {
+    const { data, isLoading, isError, refetch } = useReadContract({
+        address: CONTRACTS.VAULT_MANAGER,
+        abi: VAULT_MANAGER_ABI,
+        functionName: "getVaultInfo",
+        args: address ? [address] : undefined,
+        query: {
+            enabled: !!address,
+            refetchInterval: 10000, // Refetch every 10 seconds
+        },
+    });
+
+    // Parse the returned tuple
+    const vaultInfo: FormattedVaultInfo | null = data
+        ? {
+            collateralRaw: data[0],
+            collateral: formatEther(data[0]),
+            collateralUsd: 0, // Will be calculated with price
+            debtRaw: data[1],
+            debt: formatUnits(data[1], 6), // USDC has 6 decimals
+            pendingYieldRaw: data[2],
+            pendingYield: formatEther(data[2]),
+            healthFactor: Number(data[3]) / 100, // e.g., 14300 → 143%
+            isActive: data[4],
+            isReady: data[5],
+        }
+        : null;
+
+    return {
+        data: vaultInfo,
+        raw: data,
+        isLoading,
+        isError,
+        refetch,
+    };
+}
+
+// Hook: Check if user has an active vault
+export function useHasVault(address: `0x${string}` | undefined) {
+    const { data, isLoading } = useVaultInfo(address);
+    return {
+        hasVault: data?.isActive ?? false,
+        isLoading,
+    };
+}
+
+// Hook: Get ERC20 token balance
+export function useTokenBalance(
+    tokenAddress: `0x${string}`,
+    userAddress: `0x${string}` | undefined
+) {
+    const { data, isLoading, refetch } = useReadContract({
+        address: tokenAddress,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: userAddress ? [userAddress] : undefined,
+        query: {
+            enabled: !!userAddress,
+            refetchInterval: 15000,
+        },
+    });
+
+    return {
+        balance: data ?? BigInt(0),
+        formatted: data ? formatEther(data) : "0",
+        isLoading,
+        refetch,
+    };
+}
+
+// Hook: Get token allowance
+export function useTokenAllowance(
+    tokenAddress: `0x${string}`,
+    ownerAddress: `0x${string}` | undefined,
+    spenderAddress: `0x${string}`
+) {
+    const { data, isLoading, refetch } = useReadContract({
+        address: tokenAddress,
+        abi: ERC20_ABI,
+        functionName: "allowance",
+        args: ownerAddress ? [ownerAddress, spenderAddress] : undefined,
+        query: {
+            enabled: !!ownerAddress,
+            refetchInterval: 5000,
+        },
+    });
+
+    return {
+        allowance: data ?? BigInt(0),
+        isLoading,
+        refetch,
+    };
+}
+
+// Hook: Get asset price from Oracle
+export function useAssetPrice(assetAddress: `0x${string}`) {
+    const { data, isLoading, refetch } = useReadContract({
+        address: CONTRACTS.ORACLE,
+        abi: ORACLE_ABI,
+        functionName: "getLatestPrice",
+        args: [assetAddress],
+        query: {
+            refetchInterval: 30000, // Refresh every 30 seconds
+        },
+    });
+
+    // Price is typically returned in 8 decimals (like Chainlink)
+    const price = data ? Number(data) / 1e8 : 0;
+
+    return {
+        priceRaw: data ?? BigInt(0),
+        price,
+        isLoading,
+        refetch,
+    };
+}
+
+// Hook: Get asset value in USD
+export function useAssetValue(
+    assetAddress: `0x${string}`,
+    amount: bigint
+) {
+    const { data, isLoading } = useReadContract({
+        address: CONTRACTS.ORACLE,
+        abi: ORACLE_ABI,
+        functionName: "getAssetValue",
+        args: [assetAddress, amount],
+        query: {
+            enabled: amount > BigInt(0),
+            refetchInterval: 30000,
+        },
+    });
+
+    // Value returned in 6 decimals (USDC)
+    const value = data ? Number(formatUnits(data, 6)) : 0;
+
+    return {
+        valueRaw: data ?? BigInt(0),
+        value,
+        isLoading,
+    };
+}
+
+// Hook: Get protocol stats (public)
+export function useProtocolStats() {
+    const { data, isLoading } = useReadContracts({
+        contracts: [
+            {
+                address: CONTRACTS.VAULT_MANAGER,
+                abi: VAULT_MANAGER_ABI,
+                functionName: "totalVaults",
+            },
+            {
+                address: CONTRACTS.VAULT_MANAGER,
+                abi: VAULT_MANAGER_ABI,
+                functionName: "totalProtocolRevenue",
+            },
+            {
+                address: CONTRACTS.VAULT_MANAGER,
+                abi: VAULT_MANAGER_ABI,
+                functionName: "autoRepaymentCount",
+            },
+        ],
+        query: {
+            refetchInterval: 60000, // Refresh every minute
+        },
+    });
+
+    return {
+        totalVaults: data?.[0]?.result ? Number(data[0].result) : 0,
+        totalRevenue: data?.[1]?.result
+            ? Number(formatUnits(data[1].result as bigint, 6))
+            : 0,
+        autoRepayments: data?.[2]?.result ? Number(data[2].result) : 0,
+        isLoading,
+    };
+}
+
+// Hook: Get mETH balance specifically
+export function useMethBalance(address: `0x${string}` | undefined) {
+    return useTokenBalance(CONTRACTS.METH as `0x${string}`, address);
+}
+
+// Hook: Get fBTC balance specifically
+export function useFbtcBalance(address: `0x${string}` | undefined) {
+    return useTokenBalance(CONTRACTS.FBTC as `0x${string}`, address);
+}
+
+// Hook: Get mETH price
+export function useMethPrice() {
+    return useAssetPrice(CONTRACTS.METH as `0x${string}`);
+}
+
+// Hook: Get fBTC price
+export function useFbtcPrice() {
+    return useAssetPrice(CONTRACTS.FBTC as `0x${string}`);
+}
