@@ -94,6 +94,14 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
         require(!vaults[msg.sender].isActive, "Vault exists");
         require(borrowAmount > 0, "Must borrow");
 
+        // ✅ CRITICAL: Validate borrowAmount against LTV using oracle
+        uint256 collateralValue = IPriceOracle(priceOracle).getAssetValue(
+            collateralAsset,
+            collateralAmount
+        );
+        uint256 maxBorrow = (collateralValue * LTV_RATIO) / BASIS_POINTS;
+        require(borrowAmount <= maxBorrow, "Exceeds LTV limit");
+
         // Transfer collateral to protocol
         IERC20(collateralAsset).transferFrom(
             msg.sender,

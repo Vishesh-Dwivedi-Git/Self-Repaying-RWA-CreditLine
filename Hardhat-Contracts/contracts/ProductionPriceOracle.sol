@@ -52,33 +52,3 @@ contract ProductionPriceOracle is Ownable {
         return (amount * price * 1e10) / 1e8; // Normalize 8dec → 18dec
     }
 }
-
-/// @title SimplePriceOracle - Manual price oracle for testing
-/// @dev Use this for local/test environments, ProductionPriceOracle for mainnet
-contract SimplePriceOracle is Ownable {
-    mapping(address => uint256) public prices;
-
-    event PriceUpdated(address indexed asset, uint256 price);
-
-    constructor() Ownable(msg.sender) {}
-
-    function setPrice(address asset, uint256 price) external onlyOwner {
-        prices[asset] = price;
-        emit PriceUpdated(asset, price);
-    }
-
-    function getPrice(address asset) external view returns (uint256) {
-        uint256 price = prices[asset];
-        require(price > 0, "Price not set");
-        return price;
-    }
-
-    function getAssetValue(
-        address asset,
-        uint256 amount
-    ) external view returns (uint256) {
-        uint256 price = prices[asset];
-        require(price > 0, "Price not set");
-        return (amount * price) / 1e18;
-    }
-}
