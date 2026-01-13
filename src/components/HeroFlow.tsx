@@ -110,7 +110,7 @@ export default function HeroFlow() {
                             className="px-8 md:px-14 py-3 md:py-4 text-sm md:text-base font-medium"
                             onClick={() => {
                                 if (isConnected) {
-                                    router.push('/vault');
+                                    router.push('/dashboard');
                                 } else {
                                     setShowWalletPrompt(true);
                                     setTimeout(() => setShowWalletPrompt(false), 3000);

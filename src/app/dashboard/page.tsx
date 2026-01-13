@@ -1,233 +1,1420 @@
 "use client";
 
-import React from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
-import { ArrowLeft, RefreshCw, Gem, TrendingUp, Clock, DollarSign, AlertTriangle, ChevronRight, Activity, Settings, DoorOpen, History } from "lucide-react";
-import { cn } from "@/lib/utils";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { useAccount, useDisconnect } from "wagmi";
+import { useVaultInfo, useMethPrice, useProtocolStats } from "@/hooks/useVaultData";
+import {
+    LayoutDashboard,
+    Wallet,
+    History,
+    Settings,
+    LogOut,
+    Bell,
+    Search,
+    TrendingUp,
+    ArrowUpRight,
+    ArrowDownRight,
+    Plus,
+    Minus,
+    MoreHorizontal,
+    ChevronDown,
+    X,
+    Home,
+    Unplug,
+    User,
+    ShieldCheck,
+    Menu,
+    ChevronRight,
+    Lock,
+    RefreshCw,
+    RefreshCcw,
+    ArrowRight,
+    School,
+    Activity
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/utils";
 
-// Mock Data
+// --- MOCK DATA ---
 const VAULT_DATA = {
-    id: "1234",
-    status: "Active",
-    health: 214,
-    collateral: {
-        asset: "mETH",
-        amount: "10.000",
-        value: 30000,
-        apy: 3.2,
-        nextHarvest: "12:34 PM"
-    },
-    loan: {
-        borrowed: 21000,
-        limit: 20000, // Remaining borrowable status usually. Let's interpret "Remaining" as credit line left.
-        // Wait, if borrowed 21k and "remaining" is 20k, limit is 41k. 
-        // 30k collateral * 0.70 (70% LTV) = 21k max borrow. 
-        // If Health is 214%, that's (Collateral * LiquidationThreshold) / Loan.
-        // Let's stick to the visual mockup numbers provided by user regardless of strict math for now.
-        remaining: 20000,
-        nextRepay: "12:34 PM",
-        repayAmount: 25
-    }
+    id: "Vault #1234",
+    netValue: 10500, // Collateral - Debt
+    health: 143,
+    collateral: { asset: "mETH", amount: "10.000", value: 35000 },
+    loan: { borrowed: 24500, currency: "USDC" },
+    yield: { total: 1250, monthly: 120 },
+    transactions: [
+        { id: 1, type: "Harvest", amount: "+0.05 mETH", date: "Just now", status: "Success", hash: "0x12...34" },
+        { id: 2, type: "Repay", amount: "-250 USDC", date: "2h ago", status: "Auto", hash: "0x56...78" },
+        { id: 3, type: "Deposit", amount: "+2.00 mETH", date: "1d ago", status: "Success", hash: "0x90...12" },
+        { id: 4, type: "Harvest", amount: "+0.03 mETH", date: "2d ago", status: "Success", hash: "0x34...56" },
+        { id: 5, type: "Borrow", amount: "+500 USDC", date: "3d ago", status: "Success", hash: "0x78...90" },
+        { id: 6, type: "Deposit", amount: "+10.00 mETH", date: "5d ago", status: "Success", hash: "0xAB...CD" },
+    ],
+    notifications: [
+        { id: 1, title: "Yield Harvested", desc: "0.05 mETH added", time: "Just now" },
+        { id: 2, title: "Health Update", desc: "Health > 143%", time: "1h ago" },
+    ],
+    protocolRevenue: 12450
 };
 
-export default function Dashboard() {
+// --- SUB-COMPONENTS ---
+
+// 1. Sidebar Item (Refined)
+const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: any, label: string, active?: boolean, onClick?: () => void }) => (
+    <button
+        onClick={onClick}
+        className={cn(
+            "flex items-center gap-3 w-full p-3 rounded-xl transition-all duration-300 text-sm font-medium tracking-wide group relative overflow-hidden",
+            active
+                ? "bg-[#C3F53C]/10 text-white border border-[#C3F53C]/20 shadow-[0_0_20px_rgba(195,245,60,0.1)]"
+                : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+        )}
+    >
+        {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[#C3F53C] rounded-r-full" />}
+        <Icon className={cn("w-4 h-4 transition-all duration-300", active ? "text-[#C3F53C]" : "text-gray-500 group-hover:text-[#C3F53C]")} />
+        <span className="font-sans">{label}</span>
+        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C3F53C] animate-pulse" />}
+    </button>
+);
+
+// 2. Stat Card
+const StatCard = ({ label, value, sub, trend, delay = 0 }: { label: string, value: string, sub: string, trend?: { val: string, up: boolean }, delay?: number }) => (
+    <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay }}
+        className="bg-[#0A0A0A]/80 backdrop-blur-md p-4 lg:p-5 rounded-[1.25rem] border border-white/5 hover:border-[#C3F53C]/30 transition-all duration-500 group relative overflow-hidden"
+    >
+        <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/10 transition-all duration-500" />
+        <div className="flex justify-between items-start mb-2 relative z-10">
+            <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em]">{label}</h3>
+            {trend && (
+                <div className={cn("flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold tracking-wide border", trend.up ? "bg-[#C3F53C]/5 text-[#C3F53C] border-[#C3F53C]/20" : "bg-red-500/5 text-red-400 border-red-500/20")}>
+                    {trend.up ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                    {trend.val}
+                </div>
+            )}
+        </div>
+        <div className="text-2xl lg:text-3xl font-display font-medium text-white mb-0.5 group-hover:text-[#C3F53C] transition-colors tracking-tight">{value}</div>
+        <div className="text-[10px] lg:text-[11px] text-gray-500 font-sans tracking-wide">{sub}</div>
+    </motion.div>
+);
+
+// 3. LTV Chart
+const LTVChart = ({ health }: { health: number }) => {
     return (
-        <div className="min-h-screen bg-[#020202] text-white p-4 md:p-8 pt-24 md:pt-32 font-sans selection:bg-emerald-500/30">
+        <div className="relative w-28 h-28 lg:w-32 lg:h-32 flex items-center justify-center group pointer-events-none select-none">
+            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                <circle cx="50" cy="50" r="40" stroke="#1A1A1A" strokeWidth="8" fill="none" />
+                <circle
+                    cx="50" cy="50" r="40"
+                    stroke="#C3F53C" strokeWidth="8" fill="none"
+                    strokeDasharray="251.2"
+                    strokeDashoffset={251.2 * (1 - (100 / (health || 1)))}
+                    strokeLinecap="round"
+                    className="drop-shadow-[0_0_15px_rgba(195,245,60,0.3)] transition-all duration-1000 ease-out"
+                />
+            </svg>
+            <div className="absolute text-center">
+                <div className="text-xl lg:text-2xl font-display font-bold text-white tracking-tighter">{health}%</div>
+                <div className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mt-0.5">Health</div>
+            </div>
+            <div className="absolute inset-0 bg-[#C3F53C]/5 blur-2xl rounded-full" />
+        </div>
+    );
+};
 
-            {/* Background Ambience */}
-            <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(74,222,128,0.03),transparent_70%)] pointer-events-none" />
+// 4. Premium Yield Card (The Upgrade - REALISTIC LIVE VERSION)
+const PremiumYieldCard = ({ yieldVal }: { yieldVal: number }) => {
+    // Live Ticker State
+    const [displayYield, setDisplayYield] = useState(yieldVal);
+    const [hashRate, setHashRate] = useState(4200);
 
-            <div className="max-w-5xl mx-auto relative z-10 space-y-6">
+    // Simulate Live Yield Generation
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setDisplayYield(prev => prev + (Math.random() * 0.00005));
+            setHashRate(prev => 4200 + Math.floor(Math.random() * 150 - 75));
+        }, 100);
+        return () => clearInterval(interval);
+    }, []);
 
-                {/* --- HEADER --- */}
-                <header className="flex items-center justify-between">
+    // Formatter
+    const formattedYield = displayYield.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="bg-[#050505] p-6 rounded-[1.75rem] border border-white/10 h-[180px] relative overflow-hidden group shadow-2xl flex flex-col justify-between"
+        >
+            {/* Holographic Gradient Mesh */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(195,245,60,0.1),transparent_60%)] opacity-80" />
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-[length:20px_20px] opacity-[0.03]" />
+
+            {/* Top Section: Header */}
+            <div className="relative z-10 w-full">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C]" />
+                            <div className="absolute inset-0 rounded-full bg-[#C3F53C] animate-ping opacity-75" />
+                        </div>
+                        <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Live Yield Stream</h2>
+                    </div>
+                    <div className="font-mono text-[9px] text-[#C3F53C]/70 bg-[#C3F53C]/5 px-2 py-0.5 rounded border border-[#C3F53C]/10 whitespace-nowrap">
+                        {hashRate} H/s
+                    </div>
+                </div>
+
+                <div className="text-3xl lg:text-4xl font-display font-medium text-white tracking-tight drop-shadow-[0_0_15px_rgba(195,245,60,0.15)] glow-text tabular-nums truncate">
+                    ${formattedYield}
+                </div>
+            </div>
+
+            {/* Bottom Section: Graph */}
+            <div className="relative z-10 h-10 w-full mt-2">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 360 50" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="yieldGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#C3F53C" stopOpacity="0.5" />
+                            <stop offset="100%" stopColor="#C3F53C" stopOpacity="0" />
+                        </linearGradient>
+                    </defs>
+
+                    {/* Graph Line */}
+                    <path
+                        d="M0,40 Q20,38 40,20 T80,30 T120,10 T160,25 T200,5 T240,30 T280,15 T320,35 T360,10"
+                        fill="none"
+                        stroke="#C3F53C"
+                        strokeWidth="2"
+                        vectorEffect="non-scaling-stroke"
+                        className="drop-shadow-[0_0_8px_#C3F53C]"
+                    >
+                        <animateTransform
+                            attributeName="transform"
+                            type="translate"
+                            from="0 0"
+                            to="-40 0"
+                            dur="2s"
+                            repeatCount="indefinite"
+                        />
+                    </path>
+
+                    {/* Area Fill */}
+                    <path
+                        d="M0,40 Q20,38 40,20 T80,30 T120,10 T160,25 T200,5 T240,30 T280,15 T320,35 T360,10 V50 H0 Z"
+                        fill="url(#yieldGradient)"
+                        className="opacity-30"
+                    >
+                        <animateTransform
+                            attributeName="transform"
+                            type="translate"
+                            from="0 0"
+                            to="-40 0"
+                            dur="2s"
+                            repeatCount="indefinite"
+                        />
+                    </path>
+                </svg>
+
+                {/* Scan Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#C3F53C]/10 to-transparent w-[20%] h-full animate-[scan_3s_linear_infinite] pointer-events-none" />
+            </div>
+        </motion.div>
+    );
+};
+
+// --- VIEW COMPONENTS ---
+
+// --- 6-LAYER ARCHITECTURE COMPONENTS ---
+
+const ConnectionLine = ({ label }: { label: string }) => (
+    <div className="flex items-center gap-2 text-[9px] font-mono text-gray-600 uppercase tracking-widest mt-4 pt-4 border-t border-white/5">
+        <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C] animate-pulse" />
+        <span className="flex-1 truncate">{label}</span>
+        <ArrowRight className="w-3 h-3 text-[#C3F53C]" />
+    </div>
+);
+
+const LayerCard = ({
+    icon: Icon,
+    title,
+    subtitle,
+    value,
+    subValue,
+    desc,
+    connection,
+    delay = 0,
+    children
+}: any) => (
+    <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay }}
+        className="bg-[#0A0A0A]/60 backdrop-blur-md p-6 rounded-[1.75rem] border border-white/5 hover:border-[#C3F53C]/30 transition-all duration-500 group relative overflow-hidden flex flex-col justify-between h-[280px]"
+    >
+        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+        {/* Header */}
+        <div>
+            <div className="flex justify-between items-start mb-4">
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-[#C3F53C] group-hover:scale-110 transition-transform duration-500">
+                    <Icon className="w-5 h-5" />
+                </div>
+                {/* Layer Number Badge */}
+                <div className="text-[9px] font-bold text-gray-700 border border-white/5 px-2 py-1 rounded bg-[#050505]">
+                    LAYER {subtitle}
+                </div>
+            </div>
+
+            <h3 className="text-lg font-display font-medium text-white mb-1 group-hover:text-[#C3F53C] transition-colors">{title}</h3>
+            <p className="text-xs text-gray-500 leading-relaxed h-10 overflow-hidden">{desc}</p>
+        </div>
+
+        {/* Dynamic Content Area (Value or Graph) */}
+        <div className="my-2">
+            {children ? children : (
+                <div>
+                    <div className="text-2xl font-display font-medium text-white tracking-tight">{value}</div>
+                    {subValue && <div className="text-xs text-gray-500 font-mono mt-1">{subValue}</div>}
+                </div>
+            )}
+        </div>
+
+        {/* Footer Connection */}
+        <ConnectionLine label={connection} />
+    </motion.div>
+);
+
+
+const OverviewView = ({ data, setShowDepositModal }: any) => {
+    // Health status helper
+    const getHealthStatus = (health: number) => {
+        if (health >= 150) return { label: "SAFE", color: "text-[#C3F53C]", bg: "bg-[#C3F53C]" };
+        if (health >= 120) return { label: "MODERATE", color: "text-yellow-400", bg: "bg-yellow-400" };
+        return { label: "AT RISK", color: "text-red-400", bg: "bg-red-400" };
+    };
+    const health = getHealthStatus(data.health);
+
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 px-2">
+                <div>
+                    <h2 className="text-xl font-display font-medium text-white">Your Vault</h2>
+                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Real-time Position Overview</p>
+                </div>
+                <div className="flex gap-2">
+                    <div className="flex items-center gap-2 text-[10px] text-[#C3F53C] font-mono border border-[#C3F53C]/20 px-3 py-1.5 rounded-full bg-[#C3F53C]/5">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C3F53C] opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#C3F53C]"></span>
+                        </span>
+                        VAULT ACTIVE
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Grid: Health, Debt, Collateral */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <StatCard
+                    label="Health Factor"
+                    value={`${data.health}%`}
+                    sub={health.label}
+                    trend={{ val: "+2.3%", up: true }}
+                    delay={0}
+                />
+                <StatCard
+                    label="Outstanding Debt"
+                    value={`$${data.loan.borrowed.toLocaleString()}`}
+                    sub={data.loan.currency}
+                    delay={0.1}
+                />
+                <StatCard
+                    label="Collateral Locked"
+                    value={`${data.collateral.amount} ${data.collateral.asset}`}
+                    sub={`≈ $${data.collateral.value.toLocaleString()}`}
+                    delay={0.2}
+                />
+            </div>
+
+            {/* Pending Yield Section */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-[#C3F53C]/20 relative overflow-hidden"
+            >
+                <div className="absolute top-0 right-0 w-48 h-48 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+                <div className="flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-4">
-                        <Link href="/" className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors border border-white/5">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                        <div className="flex flex-col">
-                            <h1 className="text-2xl font-display font-medium tracking-tight">Vault #{VAULT_DATA.id}</h1>
-                            <span className="text-emerald-500 text-xs font-mono uppercase tracking-widest hidden md:block">Odyssée Protocol V2</span>
+                        <div className="w-12 h-12 rounded-xl bg-[#C3F53C]/10 flex items-center justify-center">
+                            <TrendingUp className="w-6 h-6 text-[#C3F53C]" />
+                        </div>
+                        <div>
+                            <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Pending Yield</h3>
+                            <div className="text-2xl font-display font-medium text-white">
+                                {data.yield.total.toFixed(4)} mETH
+                                <span className="text-sm text-gray-500 ml-2">≈ ${(data.yield.total * 3500).toLocaleString()}</span>
+                            </div>
                         </div>
                     </div>
-                    <Button variant="outline" className="border-white/10 bg-white/5 hover:bg-white/10 text-xs font-mono gap-2 h-9">
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        REFRESH DATA
-                    </Button>
-                </header>
-
-                {/* --- STATUS BAR --- */}
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="w-full bg-[#0a0a0a]/60 backdrop-blur-xl border border-white/10 rounded-xl p-4 flex items-center justify-between shadow-2xl"
-                >
-                    <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#4ade80]" />
-                        <span className="text-sm font-medium text-white/90">VAULT STATUS:</span>
-                        <div className="flex items-center gap-2 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
-                            <span className="text-xs font-mono font-bold text-emerald-500">HEALTH {VAULT_DATA.health}%</span>
+                    <div className="text-right hidden sm:block">
+                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Next Auto-Repay</div>
+                        <div className="flex items-center gap-2 text-[#C3F53C] font-mono text-sm">
+                            <RefreshCcw className="w-4 h-4 animate-spin" style={{ animationDuration: "3s" }} />
+                            Processing...
                         </div>
-                        <span className="text-sm text-gray-400 hidden sm:inline-block">/ {VAULT_DATA.status}</span>
                     </div>
-                    <div className="hidden md:flex text-xs text-gray-500 font-mono">
-                        BLOCK #192842
-                    </div>
-                </motion.div>
+                </div>
+            </motion.div>
 
-                {/* --- MAIN SPLIT GRID --- */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Health Gauge */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
+            >
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-[#C3F53C]" />
+                        Health Gauge
+                    </h3>
+                    <span className={cn("text-xs font-bold uppercase tracking-widest", health.color)}>{health.label}</span>
+                </div>
 
-                    {/* LEFT: COLLATERAL */}
+                {/* Progress Bar */}
+                <div className="relative h-4 bg-white/5 rounded-full overflow-hidden">
+                    {/* Gradient Background */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-red-500/30 via-yellow-500/30 to-[#C3F53C]/30" />
+                    {/* Health Indicator */}
                     <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="group relative p-6 md:p-8 rounded-3xl bg-[#080808] border border-white/5 hover:border-white/10 transition-all duration-300 overflow-hidden"
+                        initial={{ left: "0%" }}
+                        animate={{ left: `${Math.min((data.health / 200) * 100, 100)}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                        className="absolute top-0 bottom-0 flex items-center"
                     >
-                        {/* Glow */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none group-hover:bg-emerald-500/10 transition-colors" />
-
-                        <div className="flex items-center justify-between mb-8 relative z-10">
-                            <h2 className="text-sm font-mono text-gray-500 uppercase tracking-widest">COLLATERAL</h2>
-                            <Gem className="w-5 h-5 text-emerald-500" />
-                        </div>
-
-                        <div className="space-y-6 relative z-10">
-                            <div>
-                                <div className="text-4xl md:text-5xl font-display font-medium text-white mb-2">
-                                    {VAULT_DATA.collateral.amount} <span className="text-xl text-gray-500">{VAULT_DATA.collateral.asset}</span>
-                                </div>
-                                <div className="text-lg text-emerald-400 font-mono">
-                                    ≈ ${VAULT_DATA.collateral.value.toLocaleString()} ({VAULT_DATA.health}%)
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4 py-4 border-t border-white/5 border-b">
-                                <div>
-                                    <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Yield APY</div>
-                                    <div className="text-white font-medium">{VAULT_DATA.collateral.apy}%</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Next Harvest</div>
-                                    <div className="text-white font-medium">{VAULT_DATA.collateral.nextHarvest}</div>
-                                </div>
-                            </div>
-
-                            <Button className="w-full bg-white/5 hover:bg-white/10 text-white border border-white/10 h-12">
-                                + Add More Collateral
-                            </Button>
-                        </div>
-                    </motion.div>
-
-                    {/* RIGHT: LOAN */}
-                    <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="group relative p-6 md:p-8 rounded-3xl bg-[#080808] border border-white/5 hover:border-white/10 transition-all duration-300 overflow-hidden"
-                    >
-                        {/* Glow */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none group-hover:bg-blue-500/10 transition-colors" />
-
-                        <div className="flex items-center justify-between mb-8 relative z-10">
-                            <h2 className="text-sm font-mono text-gray-500 uppercase tracking-widest">YOUR LOAN</h2>
-                            <DollarSign className="w-5 h-5 text-blue-500" />
-                        </div>
-
-                        <div className="space-y-6 relative z-10">
-                            <div>
-                                <div className="text-4xl md:text-5xl font-display font-medium text-white mb-2">
-                                    ${(VAULT_DATA.loan.borrowed / 1000).toFixed(0)}K
-                                </div>
-                                <div className="text-lg text-blue-400 font-mono">
-                                    Borrowed
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4 py-4 border-t border-white/5 border-b">
-                                <div>
-                                    <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Activity className="w-3 h-3" /> Remaining</div>
-                                    <div className="text-white font-medium">${(VAULT_DATA.loan.remaining / 1000).toFixed(0)}K</div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Next Repay</div>
-                                    <div className="text-white font-medium flex items-center gap-2">
-                                        {VAULT_DATA.loan.nextRepay}
-                                        <span className="text-emerald-400 text-xs">↓${VAULT_DATA.loan.repayAmount}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <Button className="w-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 h-12">
-                                Borrow More
-                            </Button>
-                        </div>
+                        <div className={cn("w-4 h-4 rounded-full border-2 border-white shadow-lg", health.bg)} />
                     </motion.div>
                 </div>
 
-                {/* --- HEALTH METER --- */}
+                {/* Scale */}
+                <div className="flex justify-between mt-2 text-[9px] text-gray-600 font-mono">
+                    <span className="text-red-400">85%</span>
+                    <span className="text-yellow-400">120%</span>
+                    <span className="text-[#C3F53C]">150%</span>
+                    <span className="text-[#C3F53C]">200%</span>
+                </div>
+            </motion.div>
+
+            {/* Activity Log */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
+            >
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold flex items-center gap-2">
+                        <History className="w-4 h-4 text-gray-500" />
+                        Activity Log
+                    </h3>
+                    <button className="text-[10px] text-[#C3F53C] hover:underline uppercase tracking-widest">View All</button>
+                </div>
+
+                <div className="space-y-3">
+                    {data.transactions.slice(0, 5).map((tx: any, i: number) => (
+                        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                            <div className="flex items-center gap-3">
+                                <div className={cn(
+                                    "w-2 h-2 rounded-full",
+                                    tx.type === "Harvest" ? "bg-[#C3F53C]" :
+                                        tx.type === "Repay" ? "bg-blue-400" :
+                                            tx.type === "Deposit" ? "bg-emerald-400" : "bg-gray-400"
+                                )} />
+                                <div>
+                                    <span className="text-sm text-white font-medium">{tx.type}</span>
+                                    <span className="text-xs text-gray-500 ml-2">{tx.date}</span>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <span className={cn(
+                                    "text-sm font-mono",
+                                    tx.amount.startsWith("+") ? "text-[#C3F53C]" : "text-white"
+                                )}>{tx.amount}</span>
+                                {tx.status === "Auto" && (
+                                    <span className="ml-2 text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">Auto</span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </motion.div>
+
+            {/* Live Yield Stream */}
+            <div className="mt-4">
+                <h2 className="text-sm font-display font-medium text-white mb-4 uppercase tracking-widest">Live Yield Stream</h2>
+                <PremiumYieldCard yieldVal={data.yield.total} />
+            </div>
+        </div>
+    );
+};
+
+const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral: () => void }) => {
+    const collateralValue = parseFloat(data.collateral.amount) * 3500; // mETH price estimate
+
+    return (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+                <div>
+                    <h2 className="text-xl font-display font-medium text-white">Collateral Assets</h2>
+                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Your Locked Assets</p>
+                </div>
+                <Button
+                    onClick={onAddCollateral}
+                    className="bg-[#C3F53C] text-black hover:bg-[#b2e035] text-xs font-bold px-4 py-2.5 rounded-xl gap-2 shadow-[0_0_20px_rgba(195,245,60,0.2)]"
+                >
+                    <Plus className="w-4 h-4" /> Add Collateral
+                </Button>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-[#C3F53C]/20 relative overflow-hidden"
+                >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2 relative z-10">Total Collateral</h3>
+                    <div className="text-3xl font-display font-medium text-[#C3F53C] relative z-10">${collateralValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Across all assets</div>
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden"
+                >
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Current LTV</h3>
+                    <div className="text-3xl font-display font-medium text-white">70%</div>
+                    <div className="text-[10px] text-gray-500 mt-1">Max: 70%</div>
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden"
+                >
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Pending Yield</h3>
+                    <div className="text-3xl font-display font-medium text-white">{parseFloat(data.yield.total).toFixed(4)}</div>
+                    <div className="text-[10px] text-gray-500 mt-1">mETH accrued</div>
+                </motion.div>
+            </div>
+
+            {/* Assets Table */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-[#0A0A0A]/80 backdrop-blur-md border border-white/5 rounded-[1.25rem] overflow-hidden"
+            >
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="border-b border-white/10 bg-white/[0.02]">
+                            <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Asset</th>
+                            <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Locked Balance</th>
+                            <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Value (USD)</th>
+                            <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Yield APY</th>
+                            <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
+                            <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">Ξ</div>
+                                    <div>
+                                        <span className="font-medium text-white">mETH</span>
+                                        <div className="text-[10px] text-gray-500">Mantle Staked ETH</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td className="p-4">
+                                <div className="text-sm font-mono text-white">{data.collateral.amount}</div>
+                                <div className="text-[10px] text-gray-500">mETH</div>
+                            </td>
+                            <td className="p-4">
+                                <div className="text-sm font-mono text-white">${collateralValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                <div className="text-[10px] text-[#C3F53C]">+2.1% 24h</div>
+                            </td>
+                            <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-mono text-[#C3F53C]">3.2%</span>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C] animate-pulse" />
+                                </div>
+                            </td>
+                            <td className="p-4 text-right">
+                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button variant="ghost" className="h-8 px-3 text-xs text-gray-400 hover:text-white hover:bg-white/10">
+                                        <Plus className="w-3 h-3 mr-1" /> Add
+                                    </Button>
+                                    <Button variant="ghost" className="h-8 px-3 text-xs text-gray-400 hover:text-white hover:bg-white/10">
+                                        <Minus className="w-3 h-3 mr-1" /> Remove
+                                    </Button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {/* Add More Assets CTA */}
+                <div className="p-6 border-t border-white/5 flex items-center justify-center gap-4">
+                    <div className="text-center">
+                        <p className="text-gray-500 text-xs mb-3">Want to add more collateral types?</p>
+                        <Button
+                            onClick={onAddCollateral}
+                            variant="ghost"
+                            className="text-[#C3F53C] hover:bg-[#C3F53C]/10 text-xs font-bold gap-2"
+                        >
+                            <Plus className="w-4 h-4" /> Add Collateral
+                        </Button>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
+const AnalyticsView = () => {
+    // Use live protocol stats from contract
+    const { totalVaults, totalRevenue, autoRepayments, isLoading } = useProtocolStats();
+
+    const protocolStats = {
+        totalVaults: totalVaults || 0,
+        protocolRevenue: totalRevenue || 0,
+        autoRepayments: autoRepayments || 0,
+    };
+
+    return (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+                <div>
+                    <h2 className="text-xl font-display font-medium text-white">Protocol Analytics</h2>
+                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Real-time Protocol Statistics</p>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-[#C3F53C] font-mono border border-[#C3F53C]/20 px-3 py-1.5 rounded-full bg-[#C3F53C]/5">
+                    <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C3F53C] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#C3F53C]"></span>
+                    </span>
+                    LIVE DATA
+                </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-[#C3F53C]/20 relative overflow-hidden group"
+                >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+                    <div className="flex items-center gap-3 mb-3 relative z-10">
+                        <div className="w-10 h-10 rounded-xl bg-[#C3F53C]/10 flex items-center justify-center">
+                            <Wallet className="w-5 h-5 text-[#C3F53C]" />
+                        </div>
+                    </div>
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Total Vaults</h3>
+                    <div className="text-3xl font-display font-medium text-[#C3F53C] relative z-10">{protocolStats.totalVaults}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Active positions</div>
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden group hover:border-[#C3F53C]/20 transition-colors"
+                >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/5 transition-colors" />
+                    <div className="flex items-center gap-3 mb-3 relative z-10">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-[#C3F53C]/10 transition-colors">
+                            <TrendingUp className="w-5 h-5 text-gray-400 group-hover:text-[#C3F53C] transition-colors" />
+                        </div>
+                    </div>
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Protocol Revenue</h3>
+                    <div className="text-3xl font-display font-medium text-white group-hover:text-[#C3F53C] transition-colors relative z-10">${protocolStats.protocolRevenue.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">From 15% yield fee</div>
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden group hover:border-[#C3F53C]/20 transition-colors"
+                >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/5 transition-colors" />
+                    <div className="flex items-center gap-3 mb-3 relative z-10">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-[#C3F53C]/10 transition-colors">
+                            <RefreshCcw className="w-5 h-5 text-gray-400 group-hover:text-[#C3F53C] transition-colors" />
+                        </div>
+                    </div>
+                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Auto-Repayments</h3>
+                    <div className="text-3xl font-display font-medium text-white group-hover:text-[#C3F53C] transition-colors relative z-10">{protocolStats.autoRepayments.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Automated debt reductions</div>
+                </motion.div>
+            </div>
+
+            {/* Charts Grid - PREMIUM VISUALIZATIONS */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* TVL CHART - Quantum Stream Visualization */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
-                    className="p-6 md:p-8 rounded-3xl bg-[#0a0a0a]/80 border border-white/5 space-y-4"
+                    className="bg-[#0A0A0A] border border-white/10 p-0 rounded-[1.5rem] h-80 flex flex-col relative overflow-hidden group shadow-2xl"
                 >
-                    <div className="flex justify-between items-end">
-                        <div>
-                            <h3 className="text-sm font-mono text-gray-500 uppercase tracking-widest mb-1">HEALTH METER</h3>
-                            <div className="text-3xl font-display text-emerald-500">{VAULT_DATA.health}% <span className="text-lg text-emerald-500/50">Safe</span></div>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-xs text-gray-500 mb-1">Est. Full Repay</div>
-                            <div className="text-white font-medium">Dec 2026 (11 months)</div>
+                    {/* Retro-Futuristic 3D Grid Background */}
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[#0A0A0A]" style={{ perspective: '500px' }}>
+                        <div className="absolute inset-0 opacity-20 bg-[linear-gradient(to_bottom,transparent_0%,#3b82f6_100%)]"
+                            style={{ transform: 'rotateX(45deg) scale(2)', transformOrigin: 'bottom' }}>
+                            <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(0deg, transparent 24%, rgba(59, 130, 246, .3) 25%, rgba(59, 130, 246, .3) 26%, transparent 27%, transparent 74%, rgba(59, 130, 246, .3) 75%, rgba(59, 130, 246, .3) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(59, 130, 246, .3) 25%, rgba(59, 130, 246, .3) 26%, transparent 27%, transparent 74%, rgba(59, 130, 246, .3) 75%, rgba(59, 130, 246, .3) 76%, transparent 77%, transparent)', backgroundSize: '40px 40px' }} />
                         </div>
                     </div>
 
-                    {/* Progress Bar */}
-                    <div className="relative h-6 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                        {/* Safe Zone */}
-                        <div className="absolute left-0 top-0 bottom-0 w-[70%] bg-emerald-500/20 border-r border-emerald-500/20"></div>
-                        {/* Bar */}
-                        <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: "80%" }}
-                            transition={{ duration: 1, delay: 0.5, ease: "circOut" }}
-                            className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full box-border border-r-2 border-white/20 shadow-[0_0_20px_rgba(52,211,153,0.3)]"
-                        >
-                            <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:20px_20px] animate-shimmer" />
-                        </motion.div>
+                    {/* Digital Rain / Matrix Effect */}
+                    <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(59,130,246,0.5) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+
+                    <div className="flex items-center justify-between p-6 relative z-10">
+                        <h3 className="text-sm font-medium text-white flex items-center gap-2">
+                            <div className="relative">
+                                <Activity className="w-4 h-4 text-blue-400" />
+                                <div className="absolute inset-0 bg-blue-500 blur-md opacity-50" />
+                            </div>
+                            <span className="tracking-wide">TVL VARIANCE</span>
+                        </h3>
+                        <div className="flex items-center gap-3">
+                            <div className="text-[10px] text-blue-400 font-mono tracking-wider">QUANTUM STREAM</div>
+                            <div className="px-1.5 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-[9px] text-blue-300 font-bold">
+                                +12.4%
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="flex justify-between text-[10px] uppercase font-mono text-gray-600 pt-1">
-                        <span>Liquidation (110%)</span>
-                        <span>Current ({VAULT_DATA.health}%)</span>
-                        <span>Max LTV</span>
+                    {/* Quantum Chart Container */}
+                    <div className="flex-1 relative z-10 px-4 pb-4">
+                        <svg className="w-full h-full overflow-visible" viewBox="0 0 400 180" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="neonBeam" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0" />
+                                    <stop offset="10%" stopColor="#3b82f6" />
+                                    <stop offset="50%" stopColor="#60a5fa" />
+                                    <stop offset="90%" stopColor="#3b82f6" />
+                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                                </linearGradient>
+                                <filter id="glowBlur">
+                                    <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                                    <feMerge>
+                                        <feMergeNode in="coloredBlur" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
+
+                            {/* Interactive Scanline Area */}
+                            <rect width="100%" height="100%" fill="transparent" className="group-hover:cursor-crosshair" />
+
+                            {/* Main Data Beam */}
+                            <g>
+                                {/* Outer Glow Path */}
+                                <motion.path
+                                    initial={{ pathLength: 0, opacity: 0 }}
+                                    animate={{ pathLength: 1, opacity: 1 }}
+                                    transition={{ duration: 1.5, ease: "easeInOut" }}
+                                    d="M0,140 Q25,130 50,120 T100,100 T150,80 T200,95 T250,70 T300,55 T350,65 T400,40"
+                                    fill="none"
+                                    stroke="#3b82f6"
+                                    strokeWidth="6"
+                                    className="opacity-20 blur-sm"
+                                />
+                                {/* Middle Bloom Path */}
+                                <motion.path
+                                    initial={{ pathLength: 0 }}
+                                    animate={{ pathLength: 1 }}
+                                    transition={{ duration: 1.5, ease: "easeInOut", delay: 0.1 }}
+                                    d="M0,140 Q25,130 50,120 T100,100 T150,80 T200,95 T250,70 T300,55 T350,65 T400,40"
+                                    fill="none"
+                                    stroke="url(#neonBeam)"
+                                    strokeWidth="3"
+                                    filter="url(#glowBlur)"
+                                />
+                                {/* Core White Path */}
+                                <motion.path
+                                    initial={{ pathLength: 0 }}
+                                    animate={{ pathLength: 1 }}
+                                    transition={{ duration: 1.5, ease: "easeInOut", delay: 0.2 }}
+                                    d="M0,140 Q25,130 50,120 T100,100 T150,80 T200,95 T250,70 T300,55 T350,65 T400,40"
+                                    fill="none"
+                                    stroke="#ffffff"
+                                    strokeWidth="1"
+                                    className="drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+                                />
+                            </g>
+
+                            {/* Floating Data Points */}
+                            {[
+                                { cx: 100, cy: 100, val: "$1.8M" },
+                                { cx: 250, cy: 70, val: "$2.1M" },
+                                { cx: 400, cy: 40, val: "$2.4M" }
+                            ].map((pt, i) => (
+                                <motion.g
+                                    key={i}
+                                    initial={{ scale: 0, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    transition={{ delay: 1.5 + i * 0.2 }}
+                                >
+                                    <circle cx={pt.cx} cy={pt.cy} r="3" fill="#0A0A0A" stroke="#3b82f6" strokeWidth="2" />
+                                    <circle cx={pt.cx} cy={pt.cy} r="6" fill="transparent" stroke="#3b82f6" strokeWidth="1" className="opacity-30 animate-ping" />
+                                    <text x={pt.cx} y={pt.cy - 15} textAnchor="middle" fill="#60a5fa" fontSize="10" className="font-mono">{pt.val}</text>
+                                </motion.g>
+                            ))}
+
+                            {/* Interactive Scanline (Visual Only for now) */}
+                            <motion.line
+                                x1="200" y1="0" x2="200" y2="100%"
+                                stroke="rgba(255,255,255,0.1)"
+                                strokeWidth="1"
+                                strokeDasharray="4 4"
+                                animate={{ opacity: [0.2, 0.5, 0.2] }}
+                                transition={{ duration: 2, repeat: Infinity }}
+                            />
+                        </svg>
+
+                        {/* Holographic Tooltip Area */}
+                        <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur border border-blue-500/20 px-3 py-1.5 rounded-lg flex items-center gap-3">
+                            <div className="text-[10px] text-gray-400 font-mono">CURRENT TVL</div>
+                            <div className="text-sm font-bold text-white">$2,140,000</div>
+                        </div>
                     </div>
                 </motion.div>
 
-                {/* --- FOOTER ACTIONS --- */}
+                {/* COLLATERAL DISTRIBUTION - Gravity Well Visualization */}
                 <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.4 }}
-                    className="flex flex-wrap gap-4 pt-4"
+                    className="bg-[#0A0A0A] border border-white/10 p-0 rounded-[1.5rem] h-80 flex relative overflow-hidden group shadow-2xl"
                 >
-                    <Button variant="ghost" className="text-gray-400 hover:text-white gap-2">
-                        <History className="w-4 h-4" /> Repayment History
-                    </Button>
-                    <Button variant="ghost" className="text-gray-400 hover:text-white gap-2">
-                        <Settings className="w-4 h-4" /> Advanced
-                    </Button>
-                    <div className="flex-1" />
-                    <Button variant="ghost" className="text-red-400/70 hover:text-red-400 hover:bg-red-500/10 gap-2">
-                        <DoorOpen className="w-4 h-4" /> Close Vault
-                    </Button>
-                </motion.div>
+                    {/* Deep Space Background */}
+                    <div className="absolute inset-0 bg-[#000000]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,_rgba(59,130,246,0.05),_transparent_40%)]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,_rgba(195,245,60,0.05),_transparent_40%)]" />
 
+                    {/* Starfield Effect */}
+                    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(white 0.5px, transparent 0.5px)', backgroundSize: '24px 24px', opacity: 0.1 }} />
+
+                    {/* Main Title Badge */}
+                    <div className="absolute top-6 left-6 z-20">
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-1">
+                            Collateral Ecology
+                        </h3>
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C] shadow-[0_0_10px_#C3F53C] animate-pulse" />
+                            <span className="text-[10px] text-[#C3F53C] font-mono">SYSTEM LIVE</span>
+                        </div>
+                    </div>
+
+                    {/* Gravity Well Visualization (Left) */}
+                    <div className="w-2/3 h-full relative z-10">
+                        {/* Orbital Rings */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-[180px] h-[180px] rounded-full border border-white/5" />
+                            <div className="absolute w-[280px] h-[280px] rounded-full border border-dashed border-white/5 animate-spin-slow" style={{ animationDuration: '60s' }} />
+                        </div>
+
+                        {/* Central Core (TVL) */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="relative w-24 h-24 flex items-center justify-center">
+                                {/* Core Glow */}
+                                <div className="absolute inset-0 bg-white/5 rounded-full blur-2xl animate-pulse" />
+                                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-orange-500/10 rounded-full blur-md" />
+
+                                {/* Core Content */}
+                                <div className="relative z-10 text-center">
+                                    <div className="text-[10px] text-gray-500 tracking-widest font-mono mb-1">TOTAL</div>
+                                    <div className="text-xl font-display font-bold text-white tracking-tighter">$2.4M</div>
+                                </div>
+
+                                {/* Energy Beams */}
+                                <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none opacity-20">
+                                    <circle cx="50%" cy="50%" r="48" fill="none" stroke="url(#coreGradient)" strokeWidth="1" />
+                                    <defs>
+                                        <radialGradient id="coreGradient">
+                                            <stop offset="50%" stopColor="transparent" />
+                                            <stop offset="100%" stopColor="white" />
+                                        </radialGradient>
+                                    </defs>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Orbiting Planets (Assets) */}
+                        <div className="absolute inset-0">
+                            {/* mETH Planet - 60% */}
+                            <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+                                className="absolute inset-0"
+                            >
+                                <div className="absolute top-1/2 left-[75%] -translate-y-1/2 -translate-x-1/2 w-16 h-16 pointer-events-auto cursor-pointer group hover:scale-110 transition-transform">
+                                    {/* Planet Body */}
+                                    <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#1e40af] to-[#60a5fa] shadow-[inset_-4px_-4px_10px_rgba(0,0,0,0.5),0_0_20px_rgba(59,130,246,0.3)] relative z-10 mx-auto">
+                                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay" />
+                                    </div>
+                                    {/* Label Tag */}
+                                    <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap z-20">
+                                        <div className="text-[10px] text-blue-400 font-bold">mETH • 60%</div>
+                                    </div>
+                                    {/* Tether Line */}
+                                    <div className="absolute top-1/2 right-1/2 w-[100px] h-[1px] bg-gradient-to-l from-blue-500/20 to-transparent -z-10 origin-right rotate-[15deg]" />
+                                </div>
+                            </motion.div>
+
+                            {/* fBTC Planet - 25% */}
+                            <motion.div
+                                animate={{ rotate: -360 }}
+                                transition={{ duration: 55, repeat: Infinity, ease: "linear" }}
+                                className="absolute inset-0"
+                            >
+                                <div className="absolute bottom-[20%] left-[30%] -translate-y-1/2 -translate-x-1/2 w-12 h-12 pointer-events-auto cursor-pointer group hover:scale-110 transition-transform">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#9a3412] to-[#fdba74] shadow-[inset_-4px_-4px_10px_rgba(0,0,0,0.5),0_0_20px_rgba(249,115,22,0.3)] relative z-10 mx-auto">
+                                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay" />
+                                    </div>
+                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-orange-500/30 whitespace-nowrap z-20">
+                                        <div className="text-[10px] text-orange-400 font-bold">fBTC • 25%</div>
+                                    </div>
+                                </div>
+                            </motion.div>
+
+                            {/* Other Planet - 15% */}
+                            <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+                                className="absolute inset-0 w-full h-full"
+                            >
+                                <div className="absolute top-[25%] left-[40%] w-10 h-10 pointer-events-auto cursor-pointer group hover:scale-110 transition-transform">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#3f6212] to-[#ecfccb] shadow-[inset_-3px_-3px_8px_rgba(0,0,0,0.5),0_0_15px_rgba(195,245,60,0.3)] relative z-10 mx-auto">
+                                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay" />
+                                    </div>
+                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-[#C3F53C]/30 whitespace-nowrap z-20">
+                                        <div className="text-[10px] text-[#C3F53C] font-bold">Other • 15%</div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    </div>
+
+                    {/* Data Panel (Right) */}
+                    <div className="w-1/3 h-full border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-5 flex flex-col justify-center gap-4 relative z-20">
+                        {[
+                            { symbol: "Ξ", name: "mETH", value: "1.44M", sub: "60%", color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
+                            { symbol: "₿", name: "fBTC", value: "600K", sub: "25%", color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
+                            { symbol: "◆", name: "Other", value: "360K", sub: "15%", color: "text-[#C3F53C]", bg: "bg-[#C3F53C]", border: "border-[#C3F53C]/20" },
+                        ].map((item, i) => (
+                            <div key={i} className={`relative p-3 rounded-xl border ${item.border} bg-black/20 group hover:bg-white/5 transition-colors cursor-default`}>
+                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full ${item.bg} opacity-50 group-hover:opacity-100 transition-opacity`} />
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className={`text-[10px] font-bold ${item.color}`}>{item.name}</span>
+                                    <span className="text-[9px] text-gray-500 font-mono">{item.sub}</span>
+                                </div>
+                                <div className="flex items-end justify-between">
+                                    <span className="text-lg font-display font-medium text-white">${item.value}</span>
+                                    <div className={`text-[8px] px-1.5 py-0.5 rounded ${item.bg}/20 ${item.color} font-mono`}>
+                                        APY 4.2%
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
+            </div>
+
+            {/* Protocol Parameters */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
+            >
+                <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-[#C3F53C]" />
+                    Protocol Parameters
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-white/5 rounded-xl">
+                        <div className="text-2xl font-display text-[#C3F53C]">70%</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Max LTV</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/5 rounded-xl">
+                        <div className="text-2xl font-display text-white">85%</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Liquidation</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/5 rounded-xl">
+                        <div className="text-2xl font-display text-white">85%</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Yield → Repay</div>
+                    </div>
+                    <div className="text-center p-3 bg-white/5 rounded-xl">
+                        <div className="text-2xl font-display text-white">15%</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Protocol Fee</div>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
+const TransactionsView = ({ transactions }: any) => (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+        <h2 className="text-xl font-display font-medium text-white">Transaction History</h2>
+        <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl overflow-hidden">
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="border-b border-white/10 bg-white/[0.02]">
+                        <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Type</th>
+                        <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Amount</th>
+                        <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Date</th>
+                        <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold">Status</th>
+                        <th className="p-4 text-[10px] text-gray-500 uppercase tracking-widest font-bold text-right">Hash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {transactions.map((tx: any) => (
+                        <tr key={tx.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                            <td className="p-4"><span className={cn("text-xs font-bold px-2 py-1 rounded bg-white/5 border border-white/10", tx.type === "Harvest" ? "text-[#C3F53C] border-[#C3F53C]/20" : "text-white")}>{tx.type}</span></td>
+                            <td className="p-4 text-sm font-mono text-gray-300">{tx.amount}</td>
+                            <td className="p-4 text-sm text-gray-500">{tx.date}</td>
+                            <td className="p-4 text-xs font-bold text-[#C3F53C] uppercase tracking-wide">{tx.status}</td>
+                            <td className="p-4 text-right text-xs font-mono text-blue-400 hover:text-blue-300 cursor-pointer">{tx.hash}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
+
+const SettingsView = () => (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6 max-w-2xl">
+        <h2 className="text-xl font-display font-medium text-white">Vault Settings</h2>
+
+        <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <div className="text-sm font-medium text-white">Auto-Repay</div>
+                    <div className="text-xs text-gray-500 mt-1">Automatically use yield to repay debt when health is low.</div>
+                </div>
+                <div className="w-10 h-6 bg-[#C3F53C] rounded-full relative cursor-pointer shadow-[0_0_10px_rgba(195,245,60,0.3)]">
+                    <div className="absolute right-1 top-1 w-4 h-4 bg-black rounded-full" />
+                </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/5 pt-6">
+                <div>
+                    <div className="text-sm font-medium text-white">Notifications</div>
+                    <div className="text-xs text-gray-500 mt-1">Get email alerts for liquidation risks.</div>
+                </div>
+                <div className="w-10 h-6 bg-white/10 rounded-full relative cursor-pointer">
+                    <div className="absolute left-1 top-1 w-4 h-4 bg-white/50 rounded-full" />
+                </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-white/5 pt-6">
+                <div>
+                    <div className="text-sm font-medium text-white">Slippage Tolerance</div>
+                    <div className="text-xs text-gray-500 mt-1">Max slippage for harvest swaps.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-white bg-white/5 border border-white/10 rounded px-2 py-1">0.5%</span>
+                </div>
             </div>
         </div>
+
+        <div className="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
+            <h3 className="text-red-500 font-bold text-sm mb-2 uppercase tracking-widest flex items-center gap-2"><Lock className="w-4 h-4" /> Danger Zone</h3>
+            <p className="text-gray-400 text-xs mb-4">Emergency withdrawal will bypass all strategies and return funds to your wallet.</p>
+            <Button className="bg-red-500 hover:bg-red-600 text-white border-none w-full">Emergency Withdraw</Button>
+        </div>
+    </div>
+);
+
+
+// --- MAIN PAGE COMPONENT ---
+export default function VaultPage() {
+    const router = useRouter();
+    const { address, isConnected } = useAccount();
+    const { disconnect } = useDisconnect();
+    const { data: vaultInfo, isLoading: isLoadingVault } = useVaultInfo(address as `0x${string}`);
+    const { price: methPrice } = useMethPrice();
+
+    // States
+    const [activeView, setActiveView] = useState("overview"); // overview, collateral, analytics, transactions, settings
+    const [showBackPopup, setShowBackPopup] = useState(false);
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [amount, setAmount] = useState("");
+    const [selectedAsset, setSelectedAsset] = useState<"mETH" | "fBTC">("mETH");
+    const [hasCheckedVault, setHasCheckedVault] = useState(false);
+    const [addedCollateral, setAddedCollateral] = useState(0); // Track locally added collateral
+    const [addedFbtc, setAddedFbtc] = useState(0); // Track locally added fBTC
+
+    // Timeout fallback - if contract check takes too long, assume no vault
+    useEffect(() => {
+        const timeout = setTimeout(() => {
+            if (!hasCheckedVault) {
+                setHasCheckedVault(true);
+                // If still loading after timeout, redirect to create-vault
+                router.push('/create-vault');
+            }
+        }, 3000); // 3 second timeout
+
+        return () => clearTimeout(timeout);
+    }, [hasCheckedVault, router]);
+
+    // Redirect to create-vault if no active vault
+    useEffect(() => {
+        if (!isLoadingVault && isConnected) {
+            setHasCheckedVault(true);
+            if (!vaultInfo?.isActive) {
+                router.push('/create-vault');
+            }
+        }
+    }, [isLoadingVault, isConnected, vaultInfo, router]);
+
+    // Redirect to home if not connected
+    useEffect(() => {
+        if (!isConnected) {
+            router.push('/');
+        }
+    }, [isConnected, router]);
+
+    // Calculate live vault data (includes locally added collateral)
+    const baseCollateral = vaultInfo ? parseFloat(vaultInfo.collateral) : 10;
+    const totalCollateral = baseCollateral + addedCollateral;
+
+    const liveVaultData = vaultInfo ? {
+        ...VAULT_DATA,
+        health: Math.round(vaultInfo.healthFactor + (addedCollateral * 5)), // Health improves with more collateral
+        collateral: {
+            asset: "mETH",
+            amount: totalCollateral.toFixed(4),
+            value: totalCollateral * methPrice,
+        },
+        loan: {
+            borrowed: parseFloat(vaultInfo.debt),
+            currency: "USDC",
+        },
+        yield: {
+            total: parseFloat(vaultInfo.pendingYield) * methPrice,
+            monthly: parseFloat(vaultInfo.pendingYield) * methPrice * 0.1,
+        },
+    } : {
+        ...VAULT_DATA,
+        collateral: {
+            ...VAULT_DATA.collateral,
+            amount: totalCollateral.toFixed(4),
+            value: totalCollateral * 3500,
+        },
+        health: VAULT_DATA.health + (addedCollateral * 5),
+    };
+
+    // Actions
+    const handleBack = () => setShowBackPopup(true);
+    const handleHome = () => router.push("/");
+    const handleDisconnect = () => {
+        disconnect();
+        router.push("/");
+    };
+
+    const handleConfirmAction = () => {
+        if (amount && parseFloat(amount) > 0) {
+            // Add collateral to local state based on selected asset
+            if (selectedAsset === "mETH") {
+                setAddedCollateral(prev => prev + parseFloat(amount));
+            } else {
+                setAddedFbtc(prev => prev + parseFloat(amount));
+            }
+
+            // Show success feedback
+            alert(`✅ Successfully added ${amount} ${selectedAsset} to your vault!`);
+
+            // Clear form and close modal
+            setAmount("");
+            setShowDepositModal(false);
+            setShowWithdrawModal(false);
+
+            // Switch to overview to see updated dashboard
+            setActiveView("overview");
+        }
+    };
+
+    const navItems = [
+        { id: "overview", label: "Overview", icon: LayoutDashboard },
+        { id: "collateral", label: "Collateral", icon: Wallet },
+        { id: "analytics", label: "Analytics", icon: TrendingUp },
+    ];
+
+    // Helper to render active view
+    const renderContent = () => {
+        switch (activeView) {
+            case "overview": return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
+            case "collateral": return <CollateralView data={liveVaultData} onAddCollateral={() => setShowDepositModal(true)} />;
+            case "analytics": return <AnalyticsView />;
+            default: return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
+        }
+    };
+
+    // Loading state - show while checking vault status
+    if (isLoadingVault || !hasCheckedVault) {
+        return (
+            <div className="h-screen w-full bg-[#050505] text-white flex items-center justify-center">
+                <div className="text-center space-y-4">
+                    <div className="w-12 h-12 border-2 border-[#C3F53C]/20 border-t-[#C3F53C] rounded-full animate-spin mx-auto" />
+                    <p className="text-gray-400 text-sm">Checking vault status...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // If no active vault, useEffect will handle redirect - show loading state while that happens
+    if (!vaultInfo?.isActive) {
+        return (
+            <div className="h-screen w-full bg-[#050505] text-white flex items-center justify-center">
+                <div className="text-center space-y-4">
+                    <div className="w-12 h-12 border-2 border-[#C3F53C]/20 border-t-[#C3F53C] rounded-full animate-spin mx-auto" />
+                    <p className="text-gray-400 text-sm">Redirecting to create vault...</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-[100dvh] w-full bg-[#050505] text-white font-sans selection:bg-[#C3F53C]/30 flex overflow-hidden relative">
+            <div className="absolute inset-0 opacity-[0.02] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] z-0" />
+
+            <Modal isOpen={showBackPopup} onClose={() => setShowBackPopup(false)} title="Exit Dashboard?">
+                <div className="space-y-3 relative z-10">
+                    <Button onClick={handleHome} className="w-full bg-white/5 hover:bg-white/10 text-white justify-start pl-4 h-12 rounded-xl text-xs font-bold tracking-widest border border-white/10 uppercase">
+                        <Home className="w-4 h-4 mr-3 text-gray-400" /> Go to Landing Page
+                    </Button>
+                    <Button onClick={handleDisconnect} className="w-full bg-red-500/5 hover:bg-red-500/10 text-red-500 justify-start pl-4 h-12 rounded-xl text-xs font-bold tracking-widest border border-red-500/10 uppercase transition-colors">
+                        <Unplug className="w-4 h-4 mr-3" /> Disconnect Wallet
+                    </Button>
+                </div>
+            </Modal>
+
+            {/* ADD COLLATERAL MODAL - Enhanced */}
+            <Modal isOpen={showDepositModal} onClose={() => setShowDepositModal(false)} title="Add Collateral">
+                <div className="space-y-4 relative z-10">
+                    {/* Asset Selector */}
+                    <div className="bg-[#0A0A0A] p-4 rounded-2xl border border-white/5">
+                        <label className="text-[10px] text-gray-500 mb-3 block uppercase tracking-widest font-bold">Select Asset</label>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setSelectedAsset("mETH")}
+                                className={`flex-1 p-3 rounded-xl flex items-center gap-3 transition-all ${selectedAsset === "mETH" ? "bg-[#C3F53C]/10 border border-[#C3F53C]/30" : "bg-white/5 border border-white/10 hover:border-white/20"}`}
+                            >
+                                <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">Ξ</div>
+                                <div className="text-left">
+                                    <div className="text-sm font-medium text-white">mETH</div>
+                                    <div className="text-[10px] text-gray-500">Mantle Staked ETH</div>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setSelectedAsset("fBTC")}
+                                className={`flex-1 p-3 rounded-xl flex items-center gap-3 transition-all ${selectedAsset === "fBTC" ? "bg-[#C3F53C]/10 border border-[#C3F53C]/30" : "bg-white/5 border border-white/10 hover:border-white/20"}`}
+                            >
+                                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold text-sm">₿</div>
+                                <div className="text-left">
+                                    <div className="text-sm font-medium text-white">fBTC</div>
+                                    <div className="text-[10px] text-gray-500">Wrapped BTC</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Amount Input */}
+                    <div className="bg-[#0A0A0A] p-4 rounded-2xl border border-white/5">
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Amount</label>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500">Balance:</span>
+                                <span className="text-[10px] text-white font-mono">{selectedAsset === "mETH" ? "15.23 mETH" : "0.85 fBTC"}</span>
+                                <button
+                                    onClick={() => setAmount(selectedAsset === "mETH" ? "15.23" : "0.85")}
+                                    className="text-[9px] text-[#C3F53C] font-bold px-2 py-0.5 rounded bg-[#C3F53C]/10 hover:bg-[#C3F53C]/20 transition-colors"
+                                >
+                                    MAX
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="number"
+                                placeholder="0.00"
+                                autoFocus
+                                className="flex-1 bg-transparent text-3xl font-display text-white placeholder:text-gray-800 focus:outline-none"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                            />
+                            <span className={`text-lg font-medium ${selectedAsset === "mETH" ? "text-blue-400" : "text-orange-400"}`}>{selectedAsset}</span>
+                        </div>
+                        {amount && (
+                            <div className="mt-2 text-xs text-gray-500">
+                                ≈ ${(parseFloat(amount || "0") * (selectedAsset === "mETH" ? 3500 : 97000)).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Impact Preview */}
+                    <div className="bg-[#0A0A0A] p-4 rounded-2xl border border-white/5">
+                        <label className="text-[10px] text-gray-500 mb-3 block uppercase tracking-widest font-bold">Position Impact</label>
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-gray-400">New Collateral Value</span>
+                                <span className="text-white font-mono">${((parseFloat(liveVaultData.collateral.amount) * 3500) + (parseFloat(amount || "0") * (selectedAsset === "mETH" ? 3500 : 97000))).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-gray-400">New Health Factor</span>
+                                <span className="text-[#C3F53C] font-mono">+{amount ? Math.round(parseFloat(amount) * (selectedAsset === "mETH" ? 5 : 150)) : 0}%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <Button
+                        onClick={handleConfirmAction}
+                        disabled={!amount || parseFloat(amount) <= 0}
+                        className="w-full bg-[#C3F53C] hover:bg-[#b2e035] text-black font-bold h-14 rounded-xl tracking-wide uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(195,245,60,0.3)]"
+                    >
+                        {amount ? `Add ${amount} ${selectedAsset}` : "Enter Amount"}
+                    </Button>
+                </div>
+            </Modal>
+            <Modal isOpen={showWithdrawModal} onClose={() => setShowWithdrawModal(false)} title="Withdraw Funds">
+                <div className="mb-4 bg-[#0A0A0A] p-4 rounded-2xl border border-white/5 relative z-10">
+                    <label className="text-[10px] text-gray-500 mb-2 block uppercase tracking-widest font-bold">Amount (mETH)</label>
+                    <input type="number" placeholder="0.00" autoFocus className="w-full bg-transparent text-3xl font-display text-white placeholder:text-gray-800 focus:outline-none" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </div>
+                <Button onClick={handleConfirmAction} className="w-full bg-white hover:bg-gray-200 text-black font-bold h-12 rounded-xl tracking-wide uppercase text-xs">Confirm Withdraw</Button>
+            </Modal>
+
+            {/* --- SIDEBAR --- */}
+            <aside className="hidden lg:flex flex-col w-64 bg-[#080808]/50 backdrop-blur-xl border-r border-white/5 p-6 h-full flex-shrink-0 relative z-20">
+                <div className="flex items-center gap-4 mb-8 cursor-pointer group" onClick={handleBack}>
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1a1a1a] to-[#0a0a0a] border border-white/10 flex items-center justify-center shadow-lg group-hover:border-[#C3F53C]/50 transition-colors">
+                        <span className="font-display font-bold text-[#C3F53C]">GH</span>
+                    </div>
+                    <div>
+                        <div className="text-sm font-display font-medium text-white tracking-wide">Guy Hawkins</div>
+                        <div className="text-[10px] text-gray-600 uppercase tracking-[0.15em] font-bold group-hover:text-[#C3F53C] transition-colors">Vault Owner</div>
+                    </div>
+                </div>
+
+                <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar min-h-0">
+                    <div className="text-[10px] text-gray-700 font-bold uppercase tracking-[0.2em] mb-4 px-3 mt-2">Vault Console</div>
+                    {navItems.map(item => (
+                        <SidebarItem key={item.id} icon={item.icon} label={item.label} active={activeView === item.id} onClick={() => setActiveView(item.id)} />
+                    ))}
+                </nav>
+
+                <div className="pt-6 mt-auto border-t border-white/5">
+                    <button onClick={handleDisconnect} className="flex items-center gap-3 text-gray-500 hover:text-white transition-colors w-full px-3 py-2">
+                        <LogOut className="w-4 h-4" />
+                        <span className="text-sm font-medium tracking-wide">Disconnect</span>
+                    </button>
+                </div>
+            </aside>
+
+            {/* Mobile Sidebar */}
+            <AnimatePresence>
+                {isMobileMenuOpen && (
+                    <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", stiffness: 300, damping: 30 }} className="fixed inset-y-0 left-0 w-64 bg-[#080808] border-r border-white/10 z-50 p-6 flex flex-col lg:hidden">
+                        <div className="flex justify-between items-center mb-8">
+                            <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[#C3F53C] font-bold text-xs">GH</div><span className="text-sm font-bold text-white">Guy Hawkins</span></div>
+                            <button onClick={() => setIsMobileMenuOpen(false)}><X className="w-5 h-5 text-gray-500" /></button>
+                        </div>
+                        <nav className="flex-1 space-y-2 overflow-y-auto min-h-0">
+                            {navItems.map(item => (
+                                <SidebarItem key={item.id} icon={item.icon} label={item.label} active={activeView === item.id} onClick={() => { setActiveView(item.id); setIsMobileMenuOpen(false); }} />
+                            ))}
+                        </nav>
+                        <div className="mt-auto pt-6 border-t border-white/5"><Button onClick={handleDisconnect} variant="ghost" className="w-full justify-start text-gray-500 hover:text-white pl-0"><LogOut className="w-4 h-4 mr-2" /> Disconnect</Button></div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
+
+            {/* --- MAIN CONTENT --- */}
+            <main className="flex-1 h-full overflow-hidden relative z-10 flex flex-col min-h-0">
+                <div className="flex-1 overflow-y-auto w-full p-4 lg:p-8 scroll-smooth pb-32 md:pb-32">
+                    <div className="max-w-[1600px] mx-auto space-y-6 pb-24">
+                        {/* Header */}
+                        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+                            <div className="flex items-center justify-between md:block w-full md:w-auto">
+                                <div>
+                                    <h1 className="text-3xl font-display font-medium text-white tracking-tight">
+                                        {navItems.find(n => n.id === activeView)?.label || "Vault"}
+                                    </h1>
+                                    <div className="flex items-center gap-2 text-xs text-gray-600 mt-2 font-mono uppercase tracking-widest"><span className="w-2 h-2 rounded-full bg-[#C3F53C] animate-pulse" />System Active<span className="mx-2 text-gray-800">|</span>Today</div>
+                                </div>
+                                <button className="lg:hidden p-2 text-gray-400" onClick={() => setIsMobileMenuOpen(true)}><Menu className="w-6 h-6" /></button>
+                            </div>
+                            <div className="hidden md:flex items-center gap-4">
+                                <div className="relative group">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-hover:text-[#C3F53C] transition-colors" />
+                                    <input type="text" placeholder="SEARCH ASSETS..." className="pl-10 pr-4 py-2.5 bg-[#0F0F0F] border border-white/5 rounded-full text-xs font-bold tracking-widest focus:outline-none focus:border-[#C3F53C]/50 w-64 transition-all placeholder:text-gray-700 text-white" />
+                                </div>
+                                <Button className="w-10 h-10 rounded-full p-0 bg-[#0F0F0F] border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all"><Bell className="w-4 h-4 text-gray-400" /></Button>
+                            </div>
+                        </div>
+
+                        {/* VIEW CONTENT */}
+                        {renderContent()}
+
+                    </div>
+                </div>
+            </main>
+        </div>
+    );
+}
+
+// --- MODAL COMPONENT (Re-declared for completeness if needed, or stick with previous) ---
+function Modal({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) {
+    if (!isOpen) return null;
+    return (
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl" onClick={onClose}>
+                    <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="relative w-full max-w-sm p-6 rounded-3xl bg-[#0F0F0F] border border-white/10 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+                        <button onClick={onClose} className="absolute top-5 right-5 text-gray-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+                        <h2 className="text-lg font-display font-medium text-white mb-6 tracking-wide">{title}</h2>
+                        {children}
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }

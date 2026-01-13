@@ -107,7 +107,7 @@ export default function CreateVaultPage() {
     // Redirect on create success
     useEffect(() => {
         if (isCreateSuccess) {
-            router.push("/vault");
+            router.push("/dashboard");
         }
     }, [isCreateSuccess, router]);
 

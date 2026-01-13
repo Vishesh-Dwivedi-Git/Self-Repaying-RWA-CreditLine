@@ -27,7 +27,7 @@ export const Navbar = () => {
     }, []);
 
     const navLinks = [
-        { name: "Protocol", href: "/protocol" },
+        { name: "Analytics", href: "/analytics" },
         { name: "Solutions", href: "/solutions" },
         { name: "Developers", href: "/developers" },
     ];
@@ -150,7 +150,7 @@ export const Navbar = () => {
                                     onClick={() => {
                                         if (isConnected) {
                                             setMobileMenuOpen(false);
-                                            router.push('/vault');
+                                            router.push('/dashboard');
                                         } else {
                                             setShowWalletPrompt(true);
                                             setTimeout(() => setShowWalletPrompt(false), 3000);

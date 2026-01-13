@@ -34,7 +34,7 @@ export function ConnectWalletButton() {
             <div className="flex items-center gap-3">
                 {/* Vault Link */}
                 <Link
-                    href="/vault"
+                    href="/dashboard"
                     className="px-4 py-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-all flex items-center gap-2"
                 >
                     <Vault className="w-4 h-4" />
