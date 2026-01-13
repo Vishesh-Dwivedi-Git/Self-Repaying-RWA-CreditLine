@@ -1,7 +1,7 @@
 {
-  "DeployProtocol#MockFBTC": "0x5f7F942d476dD48DCb08A9c4Eeb04A6FE6814DE5",
-  "DeployProtocol#MockMETH": "0x0bE5Db694C48C1788Bc5DAe3F5B1C6B3E85149D7",
-  "DeployProtocol#MockStablecoin": "0xD4A5876D5C09858701De181035a3BB79322aFCD6",
-  "DeployProtocol#ProductionPriceOracle": "0x4e1930cD75171F15B4f46DF32579F382C79CAC7d",
-  "DeployProtocol#AutoRepaymentVaultManager": "0x9e28244544dA3368Bd5aD1Ed0f5A8D75319F7828"
+  "DeployProtocol#MockFBTC": "0xA67B9cAb3869B61094C1eA3DC87E540AF43342Ec",
+  "DeployProtocol#MockMETH": "0xd214a67947A4576B99a7A971ba285B59291E88A5",
+  "DeployProtocol#MockStablecoin": "0xc6C8ca38A2FcDDc80DE3fea02A6bE4BE0979D0F5",
+  "DeployProtocol#ProductionPriceOracle": "0x8Af74166bD472428b9f330324582DCDe83ac60B5",
+  "DeployProtocol#AutoRepaymentVaultManager": "0xb291DFBdad62428108B7BC60dB7592a59c476Ff4"
 }
