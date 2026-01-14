@@ -71,6 +71,7 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
     event VaultClosed(address indexed user);
     event Liquidated(address indexed user, uint256 collateralSeized);
     event KeeperExecuted(address indexed keeper, uint256 processedVaults);
+    event CollateralAdded(address indexed user, uint256 amount);
 
     /// @dev Modifiers
     modifier onlyKeeper() {
@@ -127,6 +128,25 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
 
         emit VaultCreated(msg.sender, collateralAsset, collateralAmount);
         emit LoanIssued(msg.sender, borrowAmount);
+    }
+
+    /// @notice Add more collateral to existing vault
+    function addCollateral(uint256 amount) external nonReentrant {
+        Vault storage vault = vaults[msg.sender];
+        require(vault.isActive, "No active vault");
+        require(amount > 0, "Amount must be > 0");
+
+        // Transfer collateral to protocol
+        IERC20(vault.collateralAsset).transferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
+
+        // Update vault state
+        vault.collateralAmount += amount;
+
+        emit CollateralAdded(msg.sender, amount);
     }
 
     /// @notice Keeper: Auto-repay ONE vault using yield
