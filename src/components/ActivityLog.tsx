@@ -35,13 +35,17 @@ export function ActivityLog({ userAddress, maxEvents = 10 }: ActivityLogProps) {
 
         async function fetchEvents() {
             try {
+                // Calculate safe block range (Mantle Sepolia limits eth_getLogs to 10,000 blocks)
+                const currentBlock = await publicClient!.getBlockNumber();
+                const fromBlock = currentBlock > BigInt(9000) ? currentBlock - BigInt(9000) : BigInt(0);
+
                 // Fetch AutoYieldApplied events
                 const autoRepayLogs = await publicClient!.getLogs({
                     address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                     event: parseAbiItem("event AutoYieldApplied(address indexed user, uint256 yieldAmount, uint256 debtReduced)"),
                     args: { user: userAddress },
-                    fromBlock: "earliest",
-                    toBlock: "latest",
+                    fromBlock,
+                    toBlock: currentBlock,
                 });
 
                 // Fetch VaultCreated events
@@ -49,14 +53,14 @@ export function ActivityLog({ userAddress, maxEvents = 10 }: ActivityLogProps) {
                     address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                     event: parseAbiItem("event VaultCreated(address indexed user, uint256 collateral, uint256 debt)"),
                     args: { user: userAddress },
-                    fromBlock: "earliest",
-                    toBlock: "latest",
+                    fromBlock,
+                    toBlock: currentBlock,
                 });
 
                 // Get block timestamps for all events
                 const allLogs = [...autoRepayLogs, ...vaultCreatedLogs];
                 const blockNumbers = [...new Set(allLogs.map(log => log.blockNumber))];
-                
+
                 const blockTimestamps: Record<string, bigint> = {};
                 await Promise.all(
                     blockNumbers.map(async (blockNumber) => {

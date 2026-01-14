@@ -66,153 +66,161 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: any
 );
 
 // 2. Stat Card
-const StatCard = ({ label, value, sub, trend, delay = 0 }: { label: string, value: string, sub: string, trend?: { val: string, up: boolean }, delay?: number }) => (
+// --- AVANT-GARDE COMPONENTS ---
+
+// 1. Bento Card (Base Wrapper)
+const BentoCard = ({ children, className, delay = 0 }: { children: React.ReactNode, className?: string, delay?: number }) => (
     <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay }}
-        className="bg-[#0A0A0A]/80 backdrop-blur-md p-4 lg:p-5 rounded-[1.25rem] border border-white/5 hover:border-[#C3F53C]/30 transition-all duration-500 group relative overflow-hidden"
+        initial={{ opacity: 0, y: 20, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }} // Custom ease
+        className={cn(
+            "relative bg-[#030303] rounded-[2rem] overflow-hidden group border border-white/5",
+            "hover:border-[#C3F53C]/30 transition-all duration-500",
+            className
+        )}
     >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/10 transition-all duration-500" />
-        <div className="flex justify-between items-start mb-2 relative z-10">
-            <h3 className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em]">{label}</h3>
-            {trend && (
-                <div className={cn("flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold tracking-wide border", trend.up ? "bg-[#C3F53C]/5 text-[#C3F53C] border-[#C3F53C]/20" : "bg-red-500/5 text-red-400 border-red-500/20")}>
-                    {trend.up ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-                    {trend.val}
-                </div>
-            )}
+        {/* Noise & Texture */}
+        <div className="absolute inset-0 z-0 opacity-[0.4] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] pointer-events-none mix-blend-overlay" />
+        <div className="absolute inset-0 z-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+
+        {/* Content */}
+        <div className="relative z-10 w-full h-full">
+            {children}
         </div>
-        <div className="text-2xl lg:text-3xl font-display font-medium text-white mb-0.5 group-hover:text-[#C3F53C] transition-colors tracking-tight">{value}</div>
-        <div className="text-[10px] lg:text-[11px] text-gray-500 font-sans tracking-wide">{sub}</div>
+
+        {/* Hover Glow */}
+        <div className="absolute -inset-px opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none z-20"
+            style={{ background: 'radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(195, 245, 60, 0.06), transparent 40%)' }}
+        />
     </motion.div>
 );
 
-// 3. LTV Chart
-const LTVChart = ({ health }: { health: number }) => {
+// 2. Holo Gauge (Health Ring)
+const HoloGauge = ({ percentage }: { percentage: number }) => {
+    // 0-200 scale mapped to 0-100 for circle
+    const normalized = Math.min((percentage / 200) * 100, 100);
+    const circumference = 2 * Math.PI * 40;
+    const offset = circumference - (normalized / 100) * circumference;
+
     return (
-        <div className="relative w-28 h-28 lg:w-32 lg:h-32 flex items-center justify-center group pointer-events-none select-none">
-            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="40" stroke="#1A1A1A" strokeWidth="8" fill="none" />
+        <div className="relative w-full h-full flex items-center justify-center">
+            {/* Rotating Decoration Rings */}
+            <div className="absolute inset-0 flex items-center justify-center animate-[spin_10s_linear_infinite] opacity-20">
+                <div className="w-[90%] h-[90%] border border-dashed border-[#C3F53C] rounded-full" />
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center animate-[spin_15s_linear_infinite_reverse] opacity-10">
+                <div className="w-[70%] h-[70%] border border-dotted border-white rounded-full" />
+            </div>
+
+            {/* Main Gauge */}
+            <svg className="w-24 h-24 transform -rotate-90 relative z-10 drop-shadow-[0_0_10px_rgba(195,245,60,0.3)]">
+                {/* Track */}
+                <circle cx="48" cy="48" r="40" className="stroke-white/5" strokeWidth="6" fill="transparent" />
+                {/* Progress */}
                 <circle
-                    cx="50" cy="50" r="40"
-                    stroke="#C3F53C" strokeWidth="8" fill="none"
-                    strokeDasharray="251.2"
-                    strokeDashoffset={251.2 * (1 - (100 / (health || 1)))}
+                    cx="48" cy="48" r="40"
+                    className="stroke-[#C3F53C] transition-[stroke-dashoffset] duration-1000 ease-out"
+                    strokeWidth="6"
+                    fill="transparent"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
                     strokeLinecap="round"
-                    className="drop-shadow-[0_0_15px_rgba(195,245,60,0.3)] transition-all duration-1000 ease-out"
                 />
             </svg>
-            <div className="absolute text-center">
-                <div className="text-xl lg:text-2xl font-display font-bold text-white tracking-tighter">{health}%</div>
-                <div className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mt-0.5">Health</div>
+
+            {/* Center Text */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+                <span className="text-2xl font-display font-medium text-white tracking-tighter">{percentage}%</span>
+                <span className="text-[8px] uppercase tracking-widest text-gray-500">Health</span>
             </div>
-            <div className="absolute inset-0 bg-[#C3F53C]/5 blur-2xl rounded-full" />
         </div>
     );
 };
 
-// 4. Premium Yield Card (The Upgrade - REALISTIC LIVE VERSION)
-const PremiumYieldCard = ({ yieldVal }: { yieldVal: number }) => {
-    // Live Ticker State
-    const [displayYield, setDisplayYield] = useState(yieldVal);
-    const [hashRate, setHashRate] = useState(4200);
+// 3. Digital Readout (Debt)
+const DigitalReadout = ({ value, label }: { value: string, label: string }) => (
+    <div className="flex flex-col h-full justify-between p-1">
+        <div className="flex items-center justify-between">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-gray-400 font-bold">{label}</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_red]" />
+        </div>
+        <div className="font-mono text-3xl text-white tracking-tighter tabular-nums truncate leading-none mt-2">
+            {value}
+        </div>
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mt-4" />
+        <div className="flex justify-between items-end mt-2 opacity-50">
+            <span className="text-[8px] font-mono text-gray-500">USDC-SEQ.01</span>
+            <Activity className="w-3 h-3 text-white" />
+        </div>
+    </div>
+);
 
-    // Simulate Live Yield Generation
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setDisplayYield(prev => prev + (Math.random() * 0.00005));
-            setHashRate(prev => 4200 + Math.floor(Math.random() * 150 - 75));
-        }, 100);
-        return () => clearInterval(interval);
-    }, []);
+// 4. Yield Reactor (Vertical)
+const YieldReactor = ({ amount, asset, usdValue }: { amount: number, asset: string, usdValue: string }) => (
+    <div className="h-full flex flex-col relative overflow-hidden">
+        {/* Core Animation Background */}
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#C3F53C]/20 to-transparent blur-2xl opacity-60" />
 
-    // Formatter
-    const formattedYield = displayYield.toLocaleString(undefined, { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+        <div className="relative z-10 flex flex-col h-full bg-white/[0.01] rounded-[1.5rem] border border-white/5 p-5">
+            <div className="flex justify-between items-start">
+                <div className="p-2 rounded-lg bg-[#C3F53C]/10 border border-[#C3F53C]/20">
+                    <TrendingUp className="w-5 h-5 text-[#C3F53C]" />
+                </div>
+                <span className="text-[9px] font-mono text-[#C3F53C] animate-pulse">REACTION ACTIVE</span>
+            </div>
 
-    return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="bg-[#050505] p-6 rounded-[1.75rem] border border-white/10 h-[180px] relative overflow-hidden group shadow-2xl flex flex-col justify-between"
-        >
-            {/* Holographic Gradient Mesh */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(195,245,60,0.1),transparent_60%)] opacity-80" />
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-[length:20px_20px] opacity-[0.03]" />
+            <div className="mt-auto">
+                <h3 className="text-[9px] uppercase tracking-[0.25em] text-gray-400 mb-2">Pending Yield</h3>
+                <div className="text-3xl font-display font-medium text-white tracking-tight leading-none mb-1">
+                    {amount.toFixed(6)}
+                </div>
+                <div className="text-sm text-gray-400 font-mono mb-4">{asset}</div>
 
-            {/* Top Section: Header */}
-            <div className="relative z-10 w-full">
-                <div className="flex items-center justify-between mb-3">
+                <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/10 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500">Est. Value</span>
+                    <span className="text-sm font-medium text-[#C3F53C]">${usdValue}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// 5. Activity Terminal (List)
+const ActivityTerminal = ({ transactions }: { transactions: any[] }) => (
+    <div className="h-full flex flex-col">
+        <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+            <h3 className="text-[9px] uppercase tracking-[0.2em] text-gray-400 font-bold flex items-center gap-2">
+                <History className="w-3 h-3" /> Terminal
+            </h3>
+            <div className="flex gap-1">
+                <div className="w-1 h-1 rounded-full bg-gray-600" />
+                <div className="w-1 h-1 rounded-full bg-gray-600" />
+                <div className="w-1 h-1 rounded-full bg-gray-600" />
+            </div>
+        </div>
+
+        <div className="flex-1 overflow-hidden relative font-mono text-[10px] space-y-2">
+            {/* Scanline */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#C3F53C]/5 to-transparent h-4 w-full animate-[scan_4s_linear_infinite] pointer-events-none" />
+
+            {transactions.slice(0, 3).map((tx, i) => (
+                <div key={i} className="flex justify-between items-center text-gray-400 hover:text-white transition-colors group cursor-pointer p-1.5 hover:bg-white/5 rounded">
                     <div className="flex items-center gap-2">
-                        <div className="relative">
-                            <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C]" />
-                            <div className="absolute inset-0 rounded-full bg-[#C3F53C] animate-ping opacity-75" />
-                        </div>
-                        <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">Live Yield Stream</h2>
+                        <span className="text-[#C3F53C] opacity-50 group-hover:opacity-100">{">"}</span>
+                        <span>[{tx.date}]</span>
+                        <span className={tx.type === "Harvest" ? "text-blue-400" : "text-white"}>{tx.type.toUpperCase()}</span>
                     </div>
-                    <div className="font-mono text-[9px] text-[#C3F53C]/70 bg-[#C3F53C]/5 px-2 py-0.5 rounded border border-[#C3F53C]/10 whitespace-nowrap">
-                        {hashRate} H/s
-                    </div>
+                    <span>{tx.amount}</span>
                 </div>
+            ))}
+            {transactions.length === 0 && <div className="text-gray-600 italic pl-4">{">"} System idle...</div>}
+        </div>
+    </div>
+);
 
-                <div className="text-3xl lg:text-4xl font-display font-medium text-white tracking-tight drop-shadow-[0_0_15px_rgba(195,245,60,0.15)] glow-text tabular-nums truncate">
-                    ${formattedYield}
-                </div>
-            </div>
 
-            {/* Bottom Section: Graph */}
-            <div className="relative z-10 h-10 w-full mt-2">
-                <svg className="w-full h-full overflow-visible" viewBox="0 0 360 50" preserveAspectRatio="none">
-                    <defs>
-                        <linearGradient id="yieldGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#C3F53C" stopOpacity="0.5" />
-                            <stop offset="100%" stopColor="#C3F53C" stopOpacity="0" />
-                        </linearGradient>
-                    </defs>
 
-                    {/* Graph Line */}
-                    <path
-                        d="M0,40 Q20,38 40,20 T80,30 T120,10 T160,25 T200,5 T240,30 T280,15 T320,35 T360,10"
-                        fill="none"
-                        stroke="#C3F53C"
-                        strokeWidth="2"
-                        vectorEffect="non-scaling-stroke"
-                        className="drop-shadow-[0_0_8px_#C3F53C]"
-                    >
-                        <animateTransform
-                            attributeName="transform"
-                            type="translate"
-                            from="0 0"
-                            to="-40 0"
-                            dur="2s"
-                            repeatCount="indefinite"
-                        />
-                    </path>
-
-                    {/* Area Fill */}
-                    <path
-                        d="M0,40 Q20,38 40,20 T80,30 T120,10 T160,25 T200,5 T240,30 T280,15 T320,35 T360,10 V50 H0 Z"
-                        fill="url(#yieldGradient)"
-                        className="opacity-30"
-                    >
-                        <animateTransform
-                            attributeName="transform"
-                            type="translate"
-                            from="0 0"
-                            to="-40 0"
-                            dur="2s"
-                            repeatCount="indefinite"
-                        />
-                    </path>
-                </svg>
-
-                {/* Scan Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#C3F53C]/10 to-transparent w-[20%] h-full animate-[scan_3s_linear_infinite] pointer-events-none" />
-            </div>
-        </motion.div>
-    );
-};
 
 // --- VIEW COMPONENTS ---
 
@@ -285,167 +293,89 @@ const OverviewView = ({ data, setShowDepositModal }: any) => {
         return { label: "AT RISK", color: "text-red-400", bg: "bg-red-400" };
     };
     const health = getHealthStatus(data.health);
+    const formattedYieldUsd = (data.yield.total * (parseFloat(data.collateral.amount) > 0 ? (data.collateral.value / parseFloat(data.collateral.amount)) : 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4 px-2">
+            <div className="flex items-center justify-between mb-8 px-2">
                 <div>
-                    <h2 className="text-xl font-display font-medium text-white">Your Vault</h2>
-                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Real-time Position Overview</p>
+                    <h2 className="text-2xl md:text-3xl font-display font-medium text-white tracking-tight">Mainframe</h2>
+                    <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-[0.2em] font-medium">System Status: Optimal</p>
                 </div>
-                <div className="flex gap-2">
-                    <div className="flex items-center gap-2 text-[10px] text-[#C3F53C] font-mono border border-[#C3F53C]/20 px-3 py-1.5 rounded-full bg-[#C3F53C]/5">
-                        <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C3F53C] opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#C3F53C]"></span>
-                        </span>
-                        VAULT ACTIVE
+                <div className="flex gap-4">
+                    <div className="hidden md:flex flex-col items-end">
+                        <span className="text-[9px] text-gray-600 uppercase tracking-widest">Network</span>
+                        <span className="text-xs font-mono text-[#C3F53C]">Mantle Sepolia</span>
+                    </div>
+                    <div className="w-px h-8 bg-white/10 hidden md:block" />
+                    <div className="flex items-center gap-2 text-[10px] text-white font-mono border border-white/10 px-4 py-2 rounded-full bg-white/5">
+                        <span className="w-2 h-2 rounded-full bg-[#C3F53C] animate-pulse" />
+                        LIVE_FEED
                     </div>
                 </div>
             </div>
 
-            {/* Stats Grid: Health, Debt, Collateral */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <StatCard
-                    label="Health Factor"
-                    value={`${data.health}%`}
-                    sub={health.label}
-                    trend={{ val: "+2.3%", up: true }}
-                    delay={0}
-                />
-                <StatCard
-                    label="Outstanding Debt"
-                    value={`$${data.loan.borrowed.toLocaleString()}`}
-                    sub={data.loan.currency}
-                    delay={0.1}
-                />
-                <StatCard
-                    label="Collateral Locked"
-                    value={`${data.collateral.amount} ${data.collateral.asset}`}
-                    sub={`≈ $${data.collateral.value.toLocaleString()}`}
-                    delay={0.2}
-                />
-            </div>
+            {/* AVANT-GARDE BENTO GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 md:auto-rows-[160px]">
 
-            {/* Pending Yield Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-[#C3F53C]/20 relative overflow-hidden"
-            >
-                <div className="absolute top-0 right-0 w-48 h-48 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-                <div className="flex items-center justify-between relative z-10">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-[#C3F53C]/10 flex items-center justify-center">
-                            <TrendingUp className="w-6 h-6 text-[#C3F53C]" />
-                        </div>
-                        <div>
-                            <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Pending Yield</h3>
-                            <div className="text-2xl font-display font-medium text-white">
-                                {data.yield.total.toFixed(6)} {data.collateral.asset}
-                                <span className="text-sm text-gray-500 ml-2">≈ ${(data.yield.total * (parseFloat(data.collateral.amount) > 0 ? (data.collateral.value / parseFloat(data.collateral.amount)) : 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="text-right hidden sm:block">
-                        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Next Auto-Repay</div>
-                        <div className="flex items-center gap-2 text-[#C3F53C] font-mono text-sm">
-                            <RefreshCcw className="w-4 h-4 animate-spin" style={{ animationDuration: "3s" }} />
-                            {data.yield.total > 0 ? "Ready to process" : "Accumulating..."}
-                        </div>
-                    </div>
-                </div>
-            </motion.div>
-
-            {/* Health Gauge */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
-            >
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-[#C3F53C]" />
-                        Health Gauge
-                    </h3>
-                    <span className={cn("text-xs font-bold uppercase tracking-widest", health.color)}>{health.label}</span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="relative h-4 bg-white/5 rounded-full overflow-hidden">
-                    {/* Gradient Background */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-red-500/30 via-yellow-500/30 to-[#C3F53C]/30" />
-                    {/* Health Indicator */}
-                    <motion.div
-                        initial={{ left: "0%" }}
-                        animate={{ left: `${Math.min((data.health / 200) * 100, 100)}%` }}
-                        transition={{ duration: 1, ease: "easeOut" }}
-                        className="absolute top-0 bottom-0 flex items-center"
-                    >
-                        <div className={cn("w-4 h-4 rounded-full border-2 border-white shadow-lg", health.bg)} />
-                    </motion.div>
-                </div>
-
-                {/* Scale */}
-                <div className="flex justify-between mt-2 text-[9px] text-gray-600 font-mono">
-                    <span className="text-red-400">85%</span>
-                    <span className="text-yellow-400">120%</span>
-                    <span className="text-[#C3F53C]">150%</span>
-                    <span className="text-[#C3F53C]">200%</span>
-                </div>
-            </motion.div>
-
-            {/* Activity Log */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
-            >
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold flex items-center gap-2">
-                        <History className="w-4 h-4 text-gray-500" />
-                        Activity Log
-                    </h3>
-                    <button className="text-[10px] text-[#C3F53C] hover:underline uppercase tracking-widest">View All</button>
-                </div>
-
-                <div className="space-y-3">
-                    {data.transactions.slice(0, 5).map((tx: any, i: number) => (
-                        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                            <div className="flex items-center gap-3">
-                                <div className={cn(
-                                    "w-2 h-2 rounded-full",
-                                    tx.type === "Harvest" ? "bg-[#C3F53C]" :
-                                        tx.type === "Repay" ? "bg-blue-400" :
-                                            tx.type === "Deposit" ? "bg-emerald-400" : "bg-gray-400"
-                                )} />
-                                <div>
-                                    <span className="text-sm text-white font-medium">{tx.type}</span>
-                                    <span className="text-xs text-gray-500 ml-2">{tx.date}</span>
+                {/* 1. Main Hero: Collateral Overview (2x2) */}
+                <BentoCard className="md:col-span-2 md:row-span-2 p-6 md:p-8 flex flex-col justify-between group min-h-[260px] md:min-h-0" delay={0}>
+                    <div className="relative z-10">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.25em] mb-1">Total Collateral</h3>
+                                <div className="flex items-baseline gap-2">
+                                    <span className="text-3xl md:text-5xl font-display font-medium text-white tracking-tighter shadow-black drop-shadow-lg">
+                                        ${data.collateral.value.toLocaleString()}
+                                    </span>
+                                </div>
+                                <div className="text-sm font-mono text-gray-500 mt-2 flex items-center gap-2">
+                                    <span className="text-[#C3F53C] bg-[#C3F53C]/10 px-1.5 py-0.5 rounded border border-[#C3F53C]/10">+12% APY</span>
+                                    <span>{data.collateral.amount} {data.collateral.asset}</span>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <span className={cn(
-                                    "text-sm font-mono",
-                                    tx.amount.startsWith("+") ? "text-[#C3F53C]" : "text-white"
-                                )}>{tx.amount}</span>
-                                {tx.status === "Auto" && (
-                                    <span className="ml-2 text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">Auto</span>
-                                )}
+                            <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
+                                <Wallet className="w-6 h-6 text-white" />
                             </div>
                         </div>
-                    ))}
-                </div>
-            </motion.div>
+                    </div>
 
-            {/* Live Yield Stream */}
-            <div className="mt-4">
-                <h2 className="text-sm font-display font-medium text-white mb-4 uppercase tracking-widest">Live Yield Stream</h2>
-                <PremiumYieldCard yieldVal={data.yield.total} />
+                    {/* Decorative Chart Area */}
+                    <div className="relative h-32 w-full mt-auto opacity-50">
+                        <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 50">
+                            <defs>
+                                <linearGradient id="chartGlow" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#C3F53C" stopOpacity="0.2" />
+                                    <stop offset="100%" stopColor="#C3F53C" stopOpacity="0" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M0,50 L0,30 Q25,10 50,25 T100,15 L100,50 Z" fill="url(#chartGlow)" />
+                            <path d="M0,30 Q25,10 50,25 T100,15" fill="none" stroke="#C3F53C" strokeWidth="0.5" />
+                        </svg>
+                    </div>
+                </BentoCard>
+
+                {/* 2. Yield Reactor (1x2 Vertical) */}
+                <BentoCard className="md:col-span-1 md:row-span-2 p-0 min-h-[200px] md:min-h-0" delay={0.1}>
+                    <YieldReactor amount={data.yield.total} asset={data.collateral.asset} usdValue={formattedYieldUsd} />
+                </BentoCard>
+
+                {/* 3. Health Gauge (1x1) */}
+                <BentoCard className="md:col-span-1 md:row-span-1 p-4 min-h-[140px] md:min-h-0" delay={0.2}>
+                    <HoloGauge percentage={data.health} />
+                </BentoCard>
+
+                {/* 4. Debt Monitor (1x1) */}
+                <BentoCard className="md:col-span-1 md:row-span-1 p-4 md:p-6 min-h-[100px] md:min-h-0" delay={0.3}>
+                    <DigitalReadout label="Debt Load" value={`$${data.loan.borrowed.toLocaleString()}`} />
+                </BentoCard>
+
+                {/* Activity Terminal (Span 4) */}
+                <BentoCard className="col-span-1 md:col-span-4 md:row-span-1 p-4 min-h-[160px] md:min-h-[140px]" delay={0.5}>
+                    <ActivityTerminal transactions={data.transactions} />
+                </BentoCard>
+
             </div>
         </div>
     );
@@ -602,85 +532,72 @@ const AnalyticsView = () => {
     const fbtcTVLFormatted = formatTVLShort(tvlData.fbtcTVL);
 
     return (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-8 px-2">
                 <div>
-                    <h2 className="text-xl font-display font-medium text-white">Protocol Analytics</h2>
-                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Real-time Protocol Statistics</p>
+                    <h2 className="text-2xl md:text-3xl font-display font-medium text-white tracking-tight">System Analytics</h2>
+                    <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-[0.2em] font-medium">Protocol Telemetry & Metrics</p>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] text-[#C3F53C] font-mono border border-[#C3F53C]/20 px-3 py-1.5 rounded-full bg-[#C3F53C]/5">
-                    <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C3F53C] opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#C3F53C]"></span>
-                    </span>
-                    LIVE DATA
+                <div className="flex gap-4">
+                    <div className="hidden md:flex flex-col items-end">
+                        <span className="text-[9px] text-gray-600 uppercase tracking-widest">Data Stream</span>
+                        <span className="text-xs font-mono text-[#C3F53C]">Encrypted</span>
+                    </div>
+                    <div className="w-px h-8 bg-white/10 hidden md:block" />
+                    <div className="flex items-center gap-2 text-[10px] text-white font-mono border border-white/10 px-4 py-2 rounded-full bg-white/5">
+                        <span className="w-2 h-2 rounded-full bg-[#C3F53C] animate-pulse" />
+                        LIVE_DATA
+                    </div>
                 </div>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0 }}
-                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-[#C3F53C]/20 relative overflow-hidden group"
-                >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-                    <div className="flex items-center gap-3 mb-3 relative z-10">
-                        <div className="w-10 h-10 rounded-xl bg-[#C3F53C]/10 flex items-center justify-center">
-                            <Wallet className="w-5 h-5 text-[#C3F53C]" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6">
+                <BentoCard className="p-4 md:p-6" delay={0}>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-[#C3F53C]/10 flex items-center justify-center">
+                            <Wallet className="w-6 h-6 text-[#C3F53C]" />
+                        </div>
+                        <div>
+                            <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Total Vaults</h3>
+                            <div className="text-2xl md:text-3xl font-display font-medium text-white shadow-black drop-shadow-md">{protocolStats.totalVaults}</div>
                         </div>
                     </div>
-                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Total Vaults</h3>
-                    <div className="text-3xl font-display font-medium text-[#C3F53C] relative z-10">{protocolStats.totalVaults}</div>
-                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Active positions</div>
-                </motion.div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-widest pl-1">Active Positions</div>
+                </BentoCard>
 
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden group hover:border-[#C3F53C]/20 transition-colors"
-                >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/5 transition-colors" />
-                    <div className="flex items-center gap-3 mb-3 relative z-10">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-[#C3F53C]/10 transition-colors">
-                            <TrendingUp className="w-5 h-5 text-gray-400 group-hover:text-[#C3F53C] transition-colors" />
+                <BentoCard className="p-4 md:p-6" delay={0.1}>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                            <TrendingUp className="w-6 h-6 text-blue-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Protocol Revenue</h3>
+                            <div className="text-2xl md:text-3xl font-display font-medium text-white shadow-black drop-shadow-md">${protocolStats.protocolRevenue.toLocaleString()}</div>
                         </div>
                     </div>
-                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Protocol Revenue</h3>
-                    <div className="text-3xl font-display font-medium text-white group-hover:text-[#C3F53C] transition-colors relative z-10">${protocolStats.protocolRevenue.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">From 15% yield fee</div>
-                </motion.div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-widest pl-1">15% Yield Fee Yield</div>
+                </BentoCard>
 
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden group hover:border-[#C3F53C]/20 transition-colors"
-                >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-[#C3F53C]/5 transition-colors" />
-                    <div className="flex items-center gap-3 mb-3 relative z-10">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-[#C3F53C]/10 transition-colors">
-                            <RefreshCcw className="w-5 h-5 text-gray-400 group-hover:text-[#C3F53C] transition-colors" />
+                <BentoCard className="p-4 md:p-6" delay={0.2}>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                            <RefreshCcw className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Auto-Repayments</h3>
+                            <div className="text-2xl md:text-3xl font-display font-medium text-white shadow-black drop-shadow-md">{protocolStats.autoRepayments.toLocaleString()}</div>
                         </div>
                     </div>
-                    <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1 relative z-10">Auto-Repayments</h3>
-                    <div className="text-3xl font-display font-medium text-white group-hover:text-[#C3F53C] transition-colors relative z-10">{protocolStats.autoRepayments.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Automated debt reductions</div>
-                </motion.div>
+                    <div className="text-[10px] text-gray-500 uppercase tracking-widest pl-1">Automated Actions</div>
+                </BentoCard>
             </div>
 
             {/* Charts Grid - PREMIUM VISUALIZATIONS */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6">
                 {/* TVL CHART - Quantum Stream Visualization */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="bg-[#0A0A0A] border border-white/10 p-0 rounded-[1.5rem] h-80 flex flex-col relative overflow-hidden group shadow-2xl"
-                >
+                <BentoCard className="p-0 h-[280px] md:h-[340px] flex flex-col relative overflow-hidden group" delay={0.3}>
                     {/* Retro-Futuristic 3D Grid Background */}
                     <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[#0A0A0A]" style={{ perspective: '500px' }}>
                         <div className="absolute inset-0 opacity-20 bg-[linear-gradient(to_bottom,transparent_0%,#3b82f6_100%)]"
@@ -803,15 +720,10 @@ const AnalyticsView = () => {
                             <div className="text-sm font-bold text-white">{isTVLLoading ? "Loading..." : totalTVLFormatted}</div>
                         </div>
                     </div>
-                </motion.div>
+                </BentoCard>
 
                 {/* COLLATERAL DISTRIBUTION - Gravity Well Visualization */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="bg-[#0A0A0A] border border-white/10 p-0 rounded-[1.5rem] h-80 flex relative overflow-hidden group shadow-2xl"
-                >
+                <BentoCard className="p-0 h-[320px] md:h-[340px] flex flex-col md:flex-row relative overflow-hidden group" delay={0.4}>
                     {/* Deep Space Background */}
                     <div className="absolute inset-0 bg-[#000000]" />
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,_rgba(59,130,246,0.05),_transparent_40%)]" />
@@ -832,7 +744,7 @@ const AnalyticsView = () => {
                     </div>
 
                     {/* Gravity Well Visualization (Left) */}
-                    <div className="w-2/3 h-full relative z-10">
+                    <div className="w-full md:w-2/3 h-2/3 md:h-full relative z-10">
                         {/* Orbital Rings */}
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div className="w-[180px] h-[180px] rounded-full border border-white/5" />
@@ -922,7 +834,7 @@ const AnalyticsView = () => {
                     </div>
 
                     {/* Data Panel (Right) */}
-                    <div className="w-1/3 h-full border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-5 flex flex-col justify-center gap-4 relative z-20">
+                    <div className="w-full md:w-1/3 h-1/3 md:h-full border-t md:border-t-0 md:border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-3 md:p-5 flex flex-row md:flex-col justify-center gap-2 md:gap-4 relative z-20">
                         {[
                             { symbol: "Ξ", name: "mETH", value: methTVLFormatted, sub: `${tvlData.methPercentage.toFixed(0)}%`, color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
                             { symbol: "₿", name: "fBTC", value: fbtcTVLFormatted, sub: `${tvlData.fbtcPercentage.toFixed(0)}%`, color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
@@ -942,21 +854,16 @@ const AnalyticsView = () => {
                             </div>
                         ))}
                     </div>
-                </motion.div>
+                </BentoCard>
             </div>
 
             {/* Protocol Parameters */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5"
-            >
+            <BentoCard className="p-4 md:p-5" delay={0.5}>
                 <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-[#C3F53C]" />
                     Protocol Parameters
                 </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                     <div className="text-center p-3 bg-white/5 rounded-xl">
                         <div className="text-2xl font-display text-[#C3F53C]">70%</div>
                         <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Max LTV</div>
@@ -974,7 +881,7 @@ const AnalyticsView = () => {
                         <div className="text-[9px] text-gray-500 uppercase tracking-widest mt-1">Protocol Fee</div>
                     </div>
                 </div>
-            </motion.div>
+            </BentoCard>
         </div>
     );
 };
@@ -1331,7 +1238,7 @@ export default function VaultPage() {
     }
 
     return (
-        <div className="h-[100dvh] w-full bg-[#050505] text-white font-sans selection:bg-[#C3F53C]/30 flex overflow-hidden relative">
+        <div className="min-h-[100dvh] w-full bg-[#050505] text-white font-sans selection:bg-[#C3F53C]/30 flex flex-col lg:flex-row overflow-x-hidden relative">
             <div className="absolute inset-0 opacity-[0.02] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] z-0" />
 
             <Modal isOpen={showBackPopup} onClose={() => setShowBackPopup(false)} title="Exit Dashboard?">
@@ -1477,10 +1384,10 @@ export default function VaultPage() {
             <aside className="hidden lg:flex flex-col w-64 bg-[#080808]/50 backdrop-blur-xl border-r border-white/5 p-6 h-full flex-shrink-0 relative z-20">
                 <div className="flex items-center gap-4 mb-8 cursor-pointer group" onClick={handleBack}>
                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1a1a1a] to-[#0a0a0a] border border-white/10 flex items-center justify-center shadow-lg group-hover:border-[#C3F53C]/50 transition-colors">
-                        <span className="font-display font-bold text-[#C3F53C]">GH</span>
+                        <span className="font-display font-bold text-[#C3F53C]">AD</span>
                     </div>
                     <div>
-                        <div className="text-sm font-display font-medium text-white tracking-wide">Guy Hawkins</div>
+                        <div className="text-sm font-display font-medium text-white tracking-wide">Admin</div>
                         <div className="text-[10px] text-gray-600 uppercase tracking-[0.15em] font-bold group-hover:text-[#C3F53C] transition-colors">Vault Owner</div>
                     </div>
                 </div>
@@ -1505,7 +1412,7 @@ export default function VaultPage() {
                 {isMobileMenuOpen && (
                     <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", stiffness: 300, damping: 30 }} className="fixed inset-y-0 left-0 w-64 bg-[#080808] border-r border-white/10 z-50 p-6 flex flex-col lg:hidden">
                         <div className="flex justify-between items-center mb-8">
-                            <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[#C3F53C] font-bold text-xs">GH</div><span className="text-sm font-bold text-white">Guy Hawkins</span></div>
+                            <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-[#1a1a1a] flex items-center justify-center text-[#C3F53C] font-bold text-xs">AD</div><span className="text-sm font-bold text-white">Admin</span></div>
                             <button onClick={() => setIsMobileMenuOpen(false)}><X className="w-5 h-5 text-gray-500" /></button>
                         </div>
                         <nav className="flex-1 space-y-2 overflow-y-auto min-h-0">
@@ -1520,8 +1427,8 @@ export default function VaultPage() {
             {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
 
             {/* --- MAIN CONTENT --- */}
-            <main className="flex-1 h-full overflow-hidden relative z-10 flex flex-col min-h-0">
-                <div className="flex-1 overflow-y-auto w-full p-4 lg:p-8 scroll-smooth pb-32 md:pb-32">
+            <main className="flex-1 min-h-0 lg:h-full overflow-y-auto relative z-10 flex flex-col">
+                <div className="flex-1 w-full p-4 lg:p-8 pb-32 md:pb-32">
                     <div className="max-w-[1600px] mx-auto space-y-6 pb-24">
                         {/* Header */}
                         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">

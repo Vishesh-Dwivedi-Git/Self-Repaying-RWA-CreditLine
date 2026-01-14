@@ -44,6 +44,10 @@ export function useHistoricalEvents({
             setIsLoading(true);
             setError(null);
 
+            // Calculate safe block range (Mantle Sepolia limits eth_getLogs to 10,000 blocks)
+            const currentBlock = await publicClient.getBlockNumber();
+            const fromBlock = currentBlock > BigInt(9000) ? currentBlock - BigInt(9000) : BigInt(0);
+
             // Define event signatures
             const vaultCreatedEvent = parseAbiItem(
                 "event VaultCreated(address indexed user, address collateral, uint256 amount)"
@@ -65,29 +69,29 @@ export function useHistoricalEvents({
                         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                         event: vaultCreatedEvent,
                         args: userAddress ? { user: userAddress } : undefined,
-                        fromBlock: "earliest",
-                        toBlock: "latest",
+                        fromBlock,
+                        toBlock: currentBlock,
                     }),
                     publicClient.getLogs({
                         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                         event: autoYieldEvent,
                         args: userAddress ? { user: userAddress } : undefined,
-                        fromBlock: "earliest",
-                        toBlock: "latest",
+                        fromBlock,
+                        toBlock: currentBlock,
                     }),
                     publicClient.getLogs({
                         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                         event: collateralAddedEvent,
                         args: userAddress ? { user: userAddress } : undefined,
-                        fromBlock: "earliest",
-                        toBlock: "latest",
+                        fromBlock,
+                        toBlock: currentBlock,
                     }),
                     publicClient.getLogs({
                         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
                         event: vaultClosedEvent,
                         args: userAddress ? { user: userAddress } : undefined,
-                        fromBlock: "earliest",
-                        toBlock: "latest",
+                        fromBlock,
+                        toBlock: currentBlock,
                     }),
                 ]);
 
