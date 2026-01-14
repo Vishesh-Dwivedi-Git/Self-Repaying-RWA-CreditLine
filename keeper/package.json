@@ -12,17 +12,17 @@
     "dev": "tsc-watch --onSuccess \"node dist/keeper.js\""
   },
   "devDependencies": {
+    "tsc-watch": "^7.2.0"
+  },
+  "dependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.8",
-    "tsc-watch": "^7.2.0",
-    "typescript": "^5.9.3"
-  },
-  "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
-    "redis": "^5.10.0"
+    "redis": "^5.10.0",
+    "typescript": "^5.9.3"
   }
 }
