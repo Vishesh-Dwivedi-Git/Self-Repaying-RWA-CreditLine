@@ -169,7 +169,7 @@ export function useAssetPrice(assetAddress: `0x${string}`) {
     const { data, isLoading, isError, refetch } = useReadContract({
         address: CONTRACTS.ORACLE,
         abi: ORACLE_ABI,
-        functionName: "getLatestPrice",
+        functionName: "getPrice",
         args: [assetAddress],
         query: {
             refetchInterval: 30000, // Refresh every 30 seconds
