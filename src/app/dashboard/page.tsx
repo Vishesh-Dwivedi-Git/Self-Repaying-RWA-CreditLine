@@ -1159,7 +1159,7 @@ export default function VaultPage() {
 
     // Build live vault data object
     const liveVaultData = {
-        health: (typeof healthFactor === 'number' ? (healthFactor*100).toFixed(2) : 0),
+        health: (typeof healthFactor === 'number' ? ((healthFactor)/10e11).toFixed(2) : 0),
         collateral: {
             asset: vaultCollateralSymbol,
             amount: collateralAmount.toFixed(4),
