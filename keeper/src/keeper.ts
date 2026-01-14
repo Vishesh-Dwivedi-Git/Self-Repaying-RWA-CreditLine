@@ -1,6 +1,8 @@
 import { ethers } from 'ethers';
 import { createClient } from 'redis';
 import * as dotenv from 'dotenv';
+import express from 'express';
+import cors from 'cors';
 
 dotenv.config();
 
@@ -13,12 +15,13 @@ const config = {
     SCAN_INTERVAL: 30 * 60 * 1000, // 30 minutes
     MIN_YIELD: BigInt(1e15), // Minimum yield threshold
     MIN_HEALTH_FACTOR: 150n, // 150% health factor required
+    HTTP_PORT: parseInt(process.env.HTTP_PORT || '3001'), // HTTP server port
 };
 
 // ABI for VaultManager contract
 const VAULT_ABI = [
     "function getVaultInfo(address) view returns (uint256,uint256,uint256,uint256,bool,bool)",
-    "function getVaultBasicInfo(address) view returns (uint256 collateral, uint256 debt, uint256 pendingYield, address collateralAsset, bool active, uint256 lastAutoCheck)",
+    "function vaults(address) view returns (uint256 collateralAmount, uint256 debtAmount, uint256 lastYieldClaim, address collateralAsset, bool isActive, uint256 lastAutoCheck)",
     "function getAllVaultOwners(uint256,uint256) view returns (address[])",
     "function totalVaults() view returns (uint256)",
     "function processMultipleAutoRepayments(address[])",
@@ -49,9 +52,9 @@ const vaultManager = new ethers.Contract(
     totalVaults: () => Promise<bigint>;
     getAllVaultOwners: (start: number, count: number) => Promise<string[]>;
     getVaultInfo: (user: string) => Promise<[bigint, bigint, bigint, bigint, boolean, boolean]>;
-    getVaultBasicInfo: (user: string) => Promise<[bigint, bigint, bigint, string, boolean, bigint]>;
+    vaults: (user: string) => Promise<[bigint, bigint, bigint, string, boolean, bigint]>;
     processMultipleAutoRepayments: (addresses: string[], overrides?: { gasLimit: number }) => Promise<ethers.ContractTransactionResponse>;
-    processAutoRepayment: (user: string, overrides?: { gasLimit: number }) => Promise<ethers.ContractTransactionResponse>;
+    processAutoRepayment: ethers.BaseContractMethod<[string], void, ethers.ContractTransactionResponse>;
     autoCheckInterval: () => Promise<bigint>;
     minYieldThreshold: () => Promise<bigint>;
 };
@@ -89,6 +92,9 @@ interface VaultCandidate {
 class OptimizedKeeper {
     private scanBatchSize = 100;
     private processBatchSize = 20;
+    private lastScanTime: Date | null = null;
+    private nextScanTime: Date | null = null;
+    private isScanning = false;
 
     async run(): Promise<void> {
         console.log('🚀 Optimized Keeper Started');
@@ -105,8 +111,27 @@ class OptimizedKeeper {
         await this.executeCycle();
     }
 
+    getStatus() {
+        const now = new Date();
+        const secondsUntilNextScan = this.nextScanTime
+            ? Math.max(0, Math.floor((this.nextScanTime.getTime() - now.getTime()) / 1000))
+            : 0;
+
+        return {
+            lastScanTime: this.lastScanTime?.toISOString() || null,
+            nextScanTime: this.nextScanTime?.toISOString() || null,
+            secondsUntilNextScan,
+            scanInterval: config.SCAN_INTERVAL / 1000, // in seconds
+            isScanning: this.isScanning,
+        };
+    }
+
     private async executeCycle(): Promise<void> {
-        console.log(`\n⏰ ${new Date().toISOString()} - Starting scan cycle`);
+        this.lastScanTime = new Date();
+        this.nextScanTime = new Date(this.lastScanTime.getTime() + config.SCAN_INTERVAL);
+        this.isScanning = true;
+
+        console.log(`\n⏰ ${this.lastScanTime.toISOString()} - Starting scan cycle`);
 
         try {
             // Phase 1: Quick scan (no price oracle)
@@ -121,6 +146,8 @@ class OptimizedKeeper {
             await this.processYieldWithFreshPrice(candidates);
         } catch (error) {
             console.error('❌ Cycle error:', error);
+        } finally {
+            this.isScanning = false;
         }
     }
 
@@ -146,11 +173,35 @@ class OptimizedKeeper {
         for (let start = 0; start < totalVaults; start += this.scanBatchSize) {
             const owners: string[] = await vaultManager.getAllVaultOwners(start, this.scanBatchSize);
 
+            console.log(`\n📦 Batch ${Math.floor(start / this.scanBatchSize) + 1}: Checking ${owners.length} vaults...`);
+
             // Parallel check all vaults in batch (no price calls!)
-            const checks = owners.map(async (owner) => {
+            const checks = owners.map(async (owner, index) => {
                 try {
                     const [collateral, debt, pendingYield, , active, ready] =
                         await vaultManager.getVaultInfo(owner);
+
+                    // Log each vault's details
+                    const collateralInMETH = ethers.formatEther(collateral);
+                    const debtAmount = ethers.formatEther(debt);
+                    const yieldInMETH = ethers.formatEther(pendingYield);
+                    const minYieldInMETH = ethers.formatEther(minYield);
+                    const meetsThreshold = pendingYield >= minYield;
+
+                    console.log(`\n  🔹 Vault ${start + index + 1}: ${owner}`);
+                    console.log(`     💰 Collateral Deposited: ${collateralInMETH} mETH`);
+                    console.log(`     💳 Debt Borrowed: ${debtAmount} stablecoin`);
+                    console.log(`     📈 Yield Earned (interest): ${yieldInMETH} mETH`);
+                    console.log(`     🎯 Min Yield Required for Repayment: ${minYieldInMETH} mETH (0.001 mETH)`);
+                    console.log(`     Status: Active=${active}, Ready=${ready}`);
+
+                    // Clear comparison
+                    if (meetsThreshold) {
+                        console.log(`     ✅ YIELD SUFFICIENT: ${yieldInMETH} >= ${minYieldInMETH} mETH`);
+                    } else {
+                        console.log(`     ❌ YIELD TOO LOW: ${yieldInMETH} < ${minYieldInMETH} mETH`);
+                        console.log(`     ⏳ Need ${(Number(minYieldInMETH) - Number(yieldInMETH)).toFixed(6)} more mETH yield`);
+                    }
 
                     // CHEAP FILTERS: Only check time/yield/status
                     if (
@@ -159,9 +210,10 @@ class OptimizedKeeper {
                         active &&
                         ready
                     ) {
+                        console.log(`     ⭐ CANDIDATE for auto-repayment!`);
                         // Get collateral asset for later price check
-                        const vault = await vaultManager.getVaultBasicInfo(owner).catch(() => null);
-                        if (vault) {
+                        try {
+                            const vault = await vaultManager.vaults(owner);
                             return {
                                 owner: ethers.getAddress(owner),
                                 collateral,
@@ -169,10 +221,20 @@ class OptimizedKeeper {
                                 pendingYield,
                                 collateralAsset: vault[3] // collateralAsset address
                             } as VaultCandidate;
+                        } catch (error) {
+                            console.error(`     ⚠️ Failed to get vault info for ${owner}: ${error}`);
+                            // Still mark as null so it gets filtered out
+                            return null;
                         }
+                    } else {
+                        const reason = debt === 0n ? 'No debt borrowed' :
+                            !meetsThreshold ? `Yield too low (need ${minYieldInMETH} mETH)` :
+                                !active ? 'Vault inactive' :
+                                    'Not ready yet (time interval)';
+                        console.log(`     ⏭️ Skipped: ${reason}`);
                     }
-                } catch {
-                    // Skip failed vaults
+                } catch (error) {
+                    console.error(`  ❌ Error checking vault ${owner}: ${error}`);
                 }
                 return null;
             });
@@ -221,15 +283,27 @@ class OptimizedKeeper {
 
                 // Only process if healthy enough
                 if (healthFactor >= config.MIN_HEALTH_FACTOR) {
-                    const tx = await vaultManager.processAutoRepayment(candidate.owner, {
-                        gasLimit: 500_000
-                    });
-                    const receipt = await tx.wait();
-                    console.log(`  ✅ Processed | Tx: ${receipt?.hash?.slice(0, 16)}... | Gas: ${receipt?.gasUsed}`);
-                    processed++;
+                    try {
+                        // First try static call to get revert reason if it would fail
+                        await vaultManager.processAutoRepayment.staticCall(candidate.owner);
 
-                    // Brief pause between transactions
-                    await new Promise<void>(r => setTimeout(r, 500));
+                        // If static call succeeds, send actual transaction
+                        const tx = await vaultManager.processAutoRepayment(candidate.owner, {
+                            gasLimit: 80_000_000
+                        });
+                        const receipt = await tx.wait();
+                        console.log(`  ✅ Processed | Tx: ${receipt?.hash?.slice(0, 16)}... | Gas: ${receipt?.gasUsed}`);
+                        processed++;
+
+                        // Brief pause between transactions
+                        await new Promise<void>(r => setTimeout(r, 500));
+                    } catch (staticError: any) {
+                        console.log(`  ⚠️ Static call failed for ${candidate.owner.slice(0, 10)}...`);
+                        console.log(`     Reason: ${staticError.message || staticError.reason || 'Unknown'}`);
+                        if (staticError.data) {
+                            console.log(`     Error data: ${staticError.data}`);
+                        }
+                    }
                 } else {
                     console.log(`  ⚠️ Skipped: Health ${healthFactor}% < ${config.MIN_HEALTH_FACTOR}%`);
                     skippedHealth++;
@@ -243,5 +317,27 @@ class OptimizedKeeper {
     }
 }
 
+// START HTTP SERVER
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const keeper = new OptimizedKeeper();
+
+// Status endpoint
+app.get('/api/status', (req, res) => {
+    res.json(keeper.getStatus());
+});
+
+// Health check
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Start HTTP server
+app.listen(config.HTTP_PORT, () => {
+    console.log(`🌐 HTTP server listening on port ${config.HTTP_PORT}`);
+});
+
 // START OPTIMIZED KEEPER
-new OptimizedKeeper().run().catch(console.error);
+keeper.run().catch(console.error);
