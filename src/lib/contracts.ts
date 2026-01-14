@@ -127,11 +127,11 @@ export const VAULT_MANAGER_ABI = [
 
 export const ORACLE_ABI = [
     {
-        name: "getLatestPrice",
+        name: "getPrice",
         type: "function",
         stateMutability: "view",
         inputs: [{ name: "asset", type: "address" }],
-        outputs: [{ name: "price", type: "uint256" }],
+        outputs: [{ name: "", type: "uint256" }],
     },
     {
         name: "getAssetValue",
@@ -142,6 +142,13 @@ export const ORACLE_ABI = [
             { name: "amount", type: "uint256" },
         ],
         outputs: [{ name: "value", type: "uint256" }],
+    },
+    {
+        name: "prices",
+        type: "function",
+        stateMutability: "view",
+        inputs: [{ name: "asset", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }],
     },
 ] as const;
 

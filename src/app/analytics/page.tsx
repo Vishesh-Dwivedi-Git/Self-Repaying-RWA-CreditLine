@@ -121,6 +121,9 @@ export default function AnalyticsPage() {
         useProtocolStats();
     const { data: tvlData, isLoading: isTVLLoading } = useTVLData();
 
+    // Debug output
+    console.log("🔍 Analytics Page - TVL Data:", tvlData);
+
     // Format TVL values for display
     const totalTVLFormatted = formatTVL(tvlData.totalTVL);
     const methTVLFormatted = formatTVLShort(tvlData.methTVL);
@@ -389,7 +392,7 @@ export default function AnalyticsPage() {
 
                                 {/* Orbiting Planets (Assets) */}
                                 <div className="absolute inset-0">
-                                    {/* mETH Planet - 60% */}
+                                    {/* mETH Planet - dynamic % */}
                                     <motion.div
                                         animate={{ rotate: 360 }}
                                         transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
@@ -402,14 +405,16 @@ export default function AnalyticsPage() {
                                             </div>
                                             {/* Label Tag */}
                                             <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap z-20">
-                                                <div className="text-[10px] text-blue-400 font-bold">mETH • 60%</div>
+                                                <div className="text-[10px] text-blue-400 font-bold">
+                                                    mETH • {isTVLLoading ? "..." : `${tvlData.methPercentage.toFixed(1)}%`}
+                                                </div>
                                             </div>
                                             {/* Tether Line */}
                                             <div className="absolute top-1/2 right-1/2 w-[100px] h-[1px] bg-gradient-to-l from-blue-500/20 to-transparent -z-10 origin-right rotate-[15deg]" />
                                         </div>
                                     </motion.div>
 
-                                    {/* fBTC Planet - 25% */}
+                                    {/* fBTC Planet - dynamic % */}
                                     <motion.div
                                         animate={{ rotate: -360 }}
                                         transition={{ duration: 55, repeat: Infinity, ease: "linear" }}
@@ -420,23 +425,9 @@ export default function AnalyticsPage() {
                                                 <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay" />
                                             </div>
                                             <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-orange-500/30 whitespace-nowrap z-20">
-                                                <div className="text-[10px] text-orange-400 font-bold">fBTC • 25%</div>
-                                            </div>
-                                        </div>
-                                    </motion.div>
-
-                                    {/* Other Planet - 15% */}
-                                    <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-                                        className="absolute inset-0 w-full h-full"
-                                    >
-                                        <div className="absolute top-[25%] left-[40%] w-10 h-10 pointer-events-auto cursor-pointer group hover:scale-110 transition-transform">
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#3f6212] to-[#ecfccb] shadow-[inset_-3px_-3px_8px_rgba(0,0,0,0.5),0_0_15px_rgba(195,245,60,0.3)] relative z-10 mx-auto">
-                                                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay" />
-                                            </div>
-                                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 px-2 py-1 rounded border border-[#C3F53C]/30 whitespace-nowrap z-20">
-                                                <div className="text-[10px] text-[#C3F53C] font-bold">Other • 15%</div>
+                                                <div className="text-[10px] text-orange-400 font-bold">
+                                                    fBTC • {isTVLLoading ? "..." : `${tvlData.fbtcPercentage.toFixed(1)}%`}
+                                                </div>
                                             </div>
                                         </div>
                                     </motion.div>
@@ -446,8 +437,8 @@ export default function AnalyticsPage() {
                             {/* Data Panel (Right) */}
                             <div className="w-1/3 h-full border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-5 flex flex-col justify-center gap-4 relative z-20">
                                 {[
-                                    { symbol: "Ξ", name: "mETH", value: methTVLFormatted, sub: `${tvlData.methPercentage.toFixed(0)}%`, color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
-                                    { symbol: "₿", name: "fBTC", value: fbtcTVLFormatted, sub: `${tvlData.fbtcPercentage.toFixed(0)}%`, color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
+                                    { symbol: "Ξ", name: "mETH", value: isTVLLoading ? "0" : methTVLFormatted, sub: isTVLLoading ? "0%" : `${tvlData.methPercentage.toFixed(1)}%`, color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
+                                    { symbol: "₿", name: "fBTC", value: isTVLLoading ? "0" : fbtcTVLFormatted, sub: isTVLLoading ? "0%" : `${tvlData.fbtcPercentage.toFixed(1)}%`, color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
                                 ].map((item, i) => (
                                     <div key={i} className={`relative p-3 rounded-xl border ${item.border} bg-black/20 group hover:bg-white/5 transition-colors cursor-default`}>
                                         <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full ${item.bg} opacity-50 group-hover:opacity-100 transition-opacity`} />
@@ -509,6 +500,42 @@ export default function AnalyticsPage() {
                                 <div className="text-2xl font-display text-white">
                                     15%
                                 </div>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                    {/* Debug Panel - Remove after fixing */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="mt-6 p-6 rounded-[1.5rem] bg-red-500/10 border border-red-500/20"
+                    >
+                        <h3 className="text-sm font-bold text-red-400 mb-4">🐛 DEBUG DATA (Check Console for Details)</h3>
+                        <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                            <div>
+                                <div className="text-gray-500">mETH Amount:</div>
+                                <div className="text-white">{tvlData.methAmount} mETH</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-500">fBTC Amount:</div>
+                                <div className="text-white">{tvlData.fbtcAmount} fBTC</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-500">mETH TVL:</div>
+                                <div className="text-white">${tvlData.methTVL.toFixed(2)}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-500">fBTC TVL:</div>
+                                <div className="text-white">${tvlData.fbtcTVL.toFixed(2)}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-500">Total TVL:</div>
+                                <div className="text-white">${tvlData.totalTVL.toFixed(2)}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-500">Loading:</div>
+                                <div className="text-white">{isTVLLoading ? "Yes" : "No"}</div>
                             </div>
                         </div>
                     </motion.div>

@@ -36,14 +36,14 @@ export function useTVLData() {
             {
                 address: CONTRACTS.ORACLE as `0x${string}`,
                 abi: ORACLE_ABI,
-                functionName: "getLatestPrice",
+                functionName: "getPrice",
                 args: [CONTRACTS.METH as `0x${string}`],
             },
             // fBTC price from oracle
             {
                 address: CONTRACTS.ORACLE as `0x${string}`,
                 abi: ORACLE_ABI,
-                functionName: "getLatestPrice",
+                functionName: "getPrice",
                 args: [CONTRACTS.FBTC as `0x${string}`],
             },
         ],
@@ -58,13 +58,29 @@ export function useTVLData() {
     const methPriceRaw = data?.[2]?.result as bigint | undefined;
     const fbtcPriceRaw = data?.[3]?.result as bigint | undefined;
 
+    // Debug logging
+    console.log("📊 TVL Debug Data:", {
+        methBalanceRaw: methBalanceRaw?.toString(),
+        fbtcBalanceRaw: fbtcBalanceRaw?.toString(),
+        methPriceRaw: methPriceRaw?.toString(),
+        fbtcPriceRaw: fbtcPriceRaw?.toString(),
+        dataStatus: data?.map(d => ({ status: d.status, error: d.error })),
+    });
+
     // Convert to numbers
     const methAmount = methBalanceRaw ? formatEther(methBalanceRaw) : "0";
     const fbtcAmount = fbtcBalanceRaw ? formatEther(fbtcBalanceRaw) : "0";
 
-    // Prices are in 8 decimals (Chainlink standard)
-    const methPrice = methPriceRaw ? Number(methPriceRaw) / 1e8 : 0;
-    const fbtcPrice = fbtcPriceRaw ? Number(fbtcPriceRaw) / 1e8 : 0;
+    // Prices are in 18 decimals (SimplePriceOracle uses 18 decimals, not 8)
+    const methPrice = methPriceRaw ? Number(methPriceRaw) / 1e18 : 0;
+    const fbtcPrice = fbtcPriceRaw ? Number(fbtcPriceRaw) / 1e18 : 0;
+
+    console.log("💰 Calculated Values:", {
+        methAmount,
+        fbtcAmount,
+        methPrice,
+        fbtcPrice,
+    });
 
     // Calculate USD values
     const methTVL = parseFloat(methAmount) * methPrice;
