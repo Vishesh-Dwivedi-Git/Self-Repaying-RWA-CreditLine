@@ -6,7 +6,9 @@
   "author": "",
   "main": "index.js",
   "type": "module",
-  "scripts": {
+   "scripts": {
+    "build": "tsc",
+    "start": "node dist/keeper.js",
     "dev": "tsc-watch --onSuccess \"node dist/keeper.js\""
   },
   "devDependencies": {
