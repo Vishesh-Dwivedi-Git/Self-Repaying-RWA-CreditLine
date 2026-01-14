@@ -1,10 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useDisconnect } from "wagmi";
-import { useVaultInfo, useMethPrice, useProtocolStats } from "@/hooks/useVaultData";
+import { parseEther, formatEther } from "viem";
+import { useVaultInfo, useMethPrice, useFbtcPrice, useProtocolStats, useMethBalance, useFbtcBalance, useTokenAllowance, useCollateralAsset } from "@/hooks/useVaultData";
+import { useApproveToken, useAddCollateral } from "@/hooks/useContractWrite";
+import { useContractEvents } from "@/hooks/useContractEvents";
+import { useHistoricalEvents, formatRelativeTime, formatEventForDisplay } from "@/hooks/useHistoricalEvents";
+import { useTVLData, formatTVL, formatTVLShort } from "@/hooks/useTVLData";
+import { CONTRACTS, TOKENS } from "@/lib/contracts";
 import {
     LayoutDashboard,
     Wallet,
@@ -32,33 +39,11 @@ import {
     RefreshCcw,
     ArrowRight,
     School,
-    Activity
+    Activity,
+    Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-
-// --- MOCK DATA ---
-const VAULT_DATA = {
-    id: "Vault #1234",
-    netValue: 10500, // Collateral - Debt
-    health: 143,
-    collateral: { asset: "mETH", amount: "10.000", value: 35000 },
-    loan: { borrowed: 24500, currency: "USDC" },
-    yield: { total: 1250, monthly: 120 },
-    transactions: [
-        { id: 1, type: "Harvest", amount: "+0.05 mETH", date: "Just now", status: "Success", hash: "0x12...34" },
-        { id: 2, type: "Repay", amount: "-250 USDC", date: "2h ago", status: "Auto", hash: "0x56...78" },
-        { id: 3, type: "Deposit", amount: "+2.00 mETH", date: "1d ago", status: "Success", hash: "0x90...12" },
-        { id: 4, type: "Harvest", amount: "+0.03 mETH", date: "2d ago", status: "Success", hash: "0x34...56" },
-        { id: 5, type: "Borrow", amount: "+500 USDC", date: "3d ago", status: "Success", hash: "0x78...90" },
-        { id: 6, type: "Deposit", amount: "+10.00 mETH", date: "5d ago", status: "Success", hash: "0xAB...CD" },
-    ],
-    notifications: [
-        { id: 1, title: "Yield Harvested", desc: "0.05 mETH added", time: "Just now" },
-        { id: 2, title: "Health Update", desc: "Health > 143%", time: "1h ago" },
-    ],
-    protocolRevenue: 12450
-};
 
 // --- SUB-COMPONENTS ---
 
@@ -359,8 +344,8 @@ const OverviewView = ({ data, setShowDepositModal }: any) => {
                         <div>
                             <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-1">Pending Yield</h3>
                             <div className="text-2xl font-display font-medium text-white">
-                                {data.yield.total.toFixed(4)} mETH
-                                <span className="text-sm text-gray-500 ml-2">≈ ${(data.yield.total * 3500).toLocaleString()}</span>
+                                {data.yield.total.toFixed(6)} {data.collateral.asset}
+                                <span className="text-sm text-gray-500 ml-2">≈ ${(data.yield.total * (parseFloat(data.collateral.amount) > 0 ? (data.collateral.value / parseFloat(data.collateral.amount)) : 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                             </div>
                         </div>
                     </div>
@@ -368,7 +353,7 @@ const OverviewView = ({ data, setShowDepositModal }: any) => {
                         <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Next Auto-Repay</div>
                         <div className="flex items-center gap-2 text-[#C3F53C] font-mono text-sm">
                             <RefreshCcw className="w-4 h-4 animate-spin" style={{ animationDuration: "3s" }} />
-                            Processing...
+                            {data.yield.total > 0 ? "Ready to process" : "Accumulating..."}
                         </div>
                     </div>
                 </div>
@@ -466,8 +451,9 @@ const OverviewView = ({ data, setShowDepositModal }: any) => {
     );
 };
 
-const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral: () => void }) => {
-    const collateralValue = parseFloat(data.collateral.amount) * 3500; // mETH price estimate
+const CollateralView = ({ data, onAddCollateral, isFallbackPrice }: { data: any, onAddCollateral: () => void, isFallbackPrice?: boolean }) => {
+    // Use live collateral value from data (already calculated with oracle price)
+    const collateralValue = data.collateral.value;
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
@@ -495,7 +481,7 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
                     <div className="absolute top-0 right-0 w-32 h-32 bg-[#C3F53C]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                     <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2 relative z-10">Total Collateral</h3>
                     <div className="text-3xl font-display font-medium text-[#C3F53C] relative z-10">${collateralValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">Across all assets</div>
+                    <div className="text-[10px] text-gray-500 mt-1 relative z-10">{data.collateral.amount} {data.collateral.asset}</div>
                 </motion.div>
 
                 <motion.div
@@ -505,7 +491,9 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
                     className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden"
                 >
                     <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Current LTV</h3>
-                    <div className="text-3xl font-display font-medium text-white">70%</div>
+                    <div className="text-3xl font-display font-medium text-white">
+                        {collateralValue > 0 ? Math.round((data.loan.borrowed / collateralValue) * 100) : 0}%
+                    </div>
                     <div className="text-[10px] text-gray-500 mt-1">Max: 70%</div>
                 </motion.div>
 
@@ -516,8 +504,8 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
                     className="bg-[#0A0A0A]/80 backdrop-blur-md p-5 rounded-[1.25rem] border border-white/5 relative overflow-hidden"
                 >
                     <h3 className="text-[10px] text-gray-400 uppercase tracking-[0.2em] font-bold mb-2">Pending Yield</h3>
-                    <div className="text-3xl font-display font-medium text-white">{parseFloat(data.yield.total).toFixed(4)}</div>
-                    <div className="text-[10px] text-gray-500 mt-1">mETH accrued</div>
+                    <div className="text-3xl font-display font-medium text-white">{data.yield.total.toFixed(6)}</div>
+                    <div className="text-[10px] text-gray-500 mt-1">{data.collateral.asset} accrued</div>
                 </motion.div>
             </div>
 
@@ -542,34 +530,35 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
                         <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
                             <td className="p-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">Ξ</div>
+                                    <div className={`w-10 h-10 rounded-xl ${data.collateral.asset === "mETH" ? "bg-blue-500/20" : "bg-orange-500/20"} flex items-center justify-center ${data.collateral.asset === "mETH" ? "text-blue-400" : "text-orange-400"} font-bold text-sm`}>
+                                        {data.collateral.asset === "mETH" ? "Ξ" : "₿"}
+                                    </div>
                                     <div>
-                                        <span className="font-medium text-white">mETH</span>
-                                        <div className="text-[10px] text-gray-500">Mantle Staked ETH</div>
+                                        <span className="font-medium text-white">{data.collateral.asset}</span>
+                                        <div className="text-[10px] text-gray-500">
+                                            {data.collateral.asset === "mETH" ? "Mantle Staked ETH" : "Wrapped BTC"}
+                                        </div>
                                     </div>
                                 </div>
                             </td>
                             <td className="p-4">
                                 <div className="text-sm font-mono text-white">{data.collateral.amount}</div>
-                                <div className="text-[10px] text-gray-500">mETH</div>
+                                <div className="text-[10px] text-gray-500">{data.collateral.asset}</div>
                             </td>
                             <td className="p-4">
                                 <div className="text-sm font-mono text-white">${collateralValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                                <div className="text-[10px] text-[#C3F53C]">+2.1% 24h</div>
+                                <div className={`text-[10px] ${isFallbackPrice ? "text-yellow-500" : "text-[#C3F53C]"}`}>{isFallbackPrice ? "Estimated" : "Live price"}</div>
                             </td>
                             <td className="p-4">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-mono text-[#C3F53C]">3.2%</span>
+                                    <span className="text-sm font-mono text-[#C3F53C]">{data.collateral.asset === "mETH" ? "3.2%" : "2.1%"}</span>
                                     <div className="w-1.5 h-1.5 rounded-full bg-[#C3F53C] animate-pulse" />
                                 </div>
                             </td>
                             <td className="p-4 text-right">
                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button variant="ghost" className="h-8 px-3 text-xs text-gray-400 hover:text-white hover:bg-white/10">
+                                    <Button onClick={onAddCollateral} variant="ghost" className="h-8 px-3 text-xs text-gray-400 hover:text-white hover:bg-white/10">
                                         <Plus className="w-3 h-3 mr-1" /> Add
-                                    </Button>
-                                    <Button variant="ghost" className="h-8 px-3 text-xs text-gray-400 hover:text-white hover:bg-white/10">
-                                        <Minus className="w-3 h-3 mr-1" /> Remove
                                     </Button>
                                 </div>
                             </td>
@@ -580,7 +569,7 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
                 {/* Add More Assets CTA */}
                 <div className="p-6 border-t border-white/5 flex items-center justify-center gap-4">
                     <div className="text-center">
-                        <p className="text-gray-500 text-xs mb-3">Want to add more collateral types?</p>
+                        <p className="text-gray-500 text-xs mb-3">Want to add more collateral?</p>
                         <Button
                             onClick={onAddCollateral}
                             variant="ghost"
@@ -598,12 +587,19 @@ const CollateralView = ({ data, onAddCollateral }: { data: any, onAddCollateral:
 const AnalyticsView = () => {
     // Use live protocol stats from contract
     const { totalVaults, totalRevenue, autoRepayments, isLoading } = useProtocolStats();
+    // Use live TVL data from contract
+    const { data: tvlData, isLoading: isTVLLoading } = useTVLData();
 
     const protocolStats = {
         totalVaults: totalVaults || 0,
         protocolRevenue: totalRevenue || 0,
         autoRepayments: autoRepayments || 0,
     };
+
+    // Format TVL values for display
+    const totalTVLFormatted = formatTVL(tvlData.totalTVL);
+    const methTVLFormatted = formatTVLShort(tvlData.methTVL);
+    const fbtcTVLFormatted = formatTVLShort(tvlData.fbtcTVL);
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
@@ -772,11 +768,11 @@ const AnalyticsView = () => {
                                 />
                             </g>
 
-                            {/* Floating Data Points */}
+                            {/* Floating Data Points - Using live TVL */}
                             {[
-                                { cx: 100, cy: 100, val: "$1.8M" },
-                                { cx: 250, cy: 70, val: "$2.1M" },
-                                { cx: 400, cy: 40, val: "$2.4M" }
+                                { cx: 100, cy: 100, val: isTVLLoading ? "..." : `$${methTVLFormatted}` },
+                                { cx: 250, cy: 70, val: isTVLLoading ? "..." : `$${fbtcTVLFormatted}` },
+                                { cx: 400, cy: 40, val: isTVLLoading ? "..." : totalTVLFormatted }
                             ].map((pt, i) => (
                                 <motion.g
                                     key={i}
@@ -804,7 +800,7 @@ const AnalyticsView = () => {
                         {/* Holographic Tooltip Area */}
                         <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur border border-blue-500/20 px-3 py-1.5 rounded-lg flex items-center gap-3">
                             <div className="text-[10px] text-gray-400 font-mono">CURRENT TVL</div>
-                            <div className="text-sm font-bold text-white">$2,140,000</div>
+                            <div className="text-sm font-bold text-white">{isTVLLoading ? "Loading..." : totalTVLFormatted}</div>
                         </div>
                     </div>
                 </motion.div>
@@ -853,7 +849,7 @@ const AnalyticsView = () => {
                                 {/* Core Content */}
                                 <div className="relative z-10 text-center">
                                     <div className="text-[10px] text-gray-500 tracking-widest font-mono mb-1">TOTAL</div>
-                                    <div className="text-xl font-display font-bold text-white tracking-tighter">$2.4M</div>
+                                    <div className="text-xl font-display font-bold text-white tracking-tighter">{isTVLLoading ? "..." : totalTVLFormatted}</div>
                                 </div>
 
                                 {/* Energy Beams */}
@@ -928,9 +924,8 @@ const AnalyticsView = () => {
                     {/* Data Panel (Right) */}
                     <div className="w-1/3 h-full border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-5 flex flex-col justify-center gap-4 relative z-20">
                         {[
-                            { symbol: "Ξ", name: "mETH", value: "1.44M", sub: "60%", color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
-                            { symbol: "₿", name: "fBTC", value: "600K", sub: "25%", color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
-                            { symbol: "◆", name: "Other", value: "360K", sub: "15%", color: "text-[#C3F53C]", bg: "bg-[#C3F53C]", border: "border-[#C3F53C]/20" },
+                            { symbol: "Ξ", name: "mETH", value: methTVLFormatted, sub: `${tvlData.methPercentage.toFixed(0)}%`, color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
+                            { symbol: "₿", name: "fBTC", value: fbtcTVLFormatted, sub: `${tvlData.fbtcPercentage.toFixed(0)}%`, color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
                         ].map((item, i) => (
                             <div key={i} className={`relative p-3 rounded-xl border ${item.border} bg-black/20 group hover:bg-white/5 transition-colors cursor-default`}>
                                 <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full ${item.bg} opacity-50 group-hover:opacity-100 transition-opacity`} />
@@ -1064,20 +1059,72 @@ export default function VaultPage() {
     const router = useRouter();
     const { address, isConnected } = useAccount();
     const { disconnect } = useDisconnect();
-    const { data: vaultInfo, isLoading: isLoadingVault } = useVaultInfo(address as `0x${string}`);
-    const { price: methPrice } = useMethPrice();
+
+    // Contract data hooks
+    const { data: vaultInfo, isLoading: isLoadingVault, refetch: refetchVault } = useVaultInfo(address as `0x${string}`);
+    const { price: methPrice, isLoading: isLoadingMethPrice, isFallback: isMethPriceFallback } = useMethPrice();
+    const { price: fbtcPrice, isLoading: isLoadingFbtcPrice, isFallback: isFbtcPriceFallback } = useFbtcPrice();
+    const { assetAddress: collateralAsset, isMeth, isFbtc, symbol: collateralSymbol, isLoading: isLoadingCollateralAsset } = useCollateralAsset(address as `0x${string}`);
+
+    // Token balances
+    const { balance: methBalanceRaw, formatted: methBalance, refetch: refetchMethBalance } = useMethBalance(address as `0x${string}`);
+    const { balance: fbtcBalanceRaw, formatted: fbtcBalance, refetch: refetchFbtcBalance } = useFbtcBalance(address as `0x${string}`);
+
+    // Token allowances
+    const { allowance: methAllowance, refetch: refetchMethAllowance } = useTokenAllowance(
+        CONTRACTS.METH as `0x${string}`,
+        address as `0x${string}`,
+        CONTRACTS.VAULT_MANAGER as `0x${string}`
+    );
+    const { allowance: fbtcAllowance, refetch: refetchFbtcAllowance } = useTokenAllowance(
+        CONTRACTS.FBTC as `0x${string}`,
+        address as `0x${string}`,
+        CONTRACTS.VAULT_MANAGER as `0x${string}`
+    );
+
+    // Contract write hooks
+    const { approve, isPending: isApproving, isSuccess: isApproveSuccess, isConfirming: isApproveConfirming } = useApproveToken();
+    const { addCollateral, isPending: isAddingCollateral, isSuccess: isAddCollateralSuccess, isConfirming: isAddCollateralConfirming } = useAddCollateral();
+
+    // Contract events
+    useContractEvents({
+        userAddress: address as `0x${string}`,
+        onAutoYieldApplied: (yieldAmount, debtReduced) => {
+            // Show notification and refresh data
+            console.log(`🎉 Yield Applied: ${formatEther(yieldAmount)} - Debt reduced by ${formatEther(debtReduced)}`);
+            refetchVault();
+        },
+        onVaultClosed: (collateralReturned) => {
+            console.log(`🏆 Vault Closed! Collateral returned: ${formatEther(collateralReturned)}`);
+            router.push('/create-vault');
+        },
+    });
 
     // States
-    const [activeView, setActiveView] = useState("overview"); // overview, collateral, analytics, transactions, settings
+    const [activeView, setActiveView] = useState("overview"); // overview, collateral, analytics
     const [showBackPopup, setShowBackPopup] = useState(false);
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [showWithdrawModal, setShowWithdrawModal] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [amount, setAmount] = useState("");
-    const [selectedAsset, setSelectedAsset] = useState<"mETH" | "fBTC">("mETH");
     const [hasCheckedVault, setHasCheckedVault] = useState(false);
-    const [addedCollateral, setAddedCollateral] = useState(0); // Track locally added collateral
-    const [addedFbtc, setAddedFbtc] = useState(0); // Track locally added fBTC
+    const [txStep, setTxStep] = useState<"idle" | "approving" | "adding">("idle");
+    const [notifications, setNotifications] = useState<{ id: number; title: string; desc: string; time: string }[]>([]);
+
+    // Fetch historical events
+    const { events: historicalEvents, isLoading: isHistoryLoading } = useHistoricalEvents({
+        userAddress: address as `0x${string}`,
+        maxEvents: 10
+    });
+
+    // Determine vault's collateral type (for display purposes)
+    const vaultCollateralType = collateralSymbol === "fBTC" ? "fBTC" : "mETH";
+
+    // Get current price based on vault's collateral type
+    const currentPrice = vaultCollateralType === "mETH" ? methPrice : fbtcPrice;
+    const currentBalance = vaultCollateralType === "mETH" ? methBalance : fbtcBalance;
+    const currentBalanceRaw = vaultCollateralType === "mETH" ? methBalanceRaw : fbtcBalanceRaw;
+    const currentAllowance = vaultCollateralType === "mETH" ? methAllowance : fbtcAllowance;
 
     // Timeout fallback - if contract check takes too long, assume no vault
     useEffect(() => {
@@ -1087,7 +1134,7 @@ export default function VaultPage() {
                 // If still loading after timeout, redirect to create-vault
                 router.push('/create-vault');
             }
-        }, 3000); // 3 second timeout
+        }, 5000); // 5 second timeout
 
         return () => clearTimeout(timeout);
     }, [hasCheckedVault, router]);
@@ -1109,34 +1156,72 @@ export default function VaultPage() {
         }
     }, [isConnected, router]);
 
-    // Calculate live vault data (includes locally added collateral)
-    const baseCollateral = vaultInfo ? parseFloat(vaultInfo.collateral) : 10;
-    const totalCollateral = baseCollateral + addedCollateral;
+    // Refresh data after successful transactions
+    useEffect(() => {
+        if (isApproveSuccess) {
+            refetchMethAllowance();
+            refetchFbtcAllowance();
+        }
+    }, [isApproveSuccess, refetchMethAllowance, refetchFbtcAllowance]);
 
-    const liveVaultData = vaultInfo ? {
-        ...VAULT_DATA,
-        health: Math.round(vaultInfo.healthFactor + (addedCollateral * 5)), // Health improves with more collateral
+    useEffect(() => {
+        if (isAddCollateralSuccess) {
+            refetchVault();
+            refetchMethBalance();
+            refetchFbtcBalance();
+            setShowDepositModal(false);
+            setAmount("");
+            setTxStep("idle");
+            // Add notification
+            setNotifications(prev => [{
+                id: Date.now(),
+                title: "Collateral Added",
+                desc: `${amount} ${vaultCollateralType} deposited`,
+                time: "Just now"
+            }, ...prev].slice(0, 5));
+        }
+    }, [isAddCollateralSuccess, amount, vaultCollateralType, refetchVault, refetchMethBalance, refetchFbtcBalance]);
+
+    // Determine the collateral asset symbol (from contract or default)
+    const vaultCollateralSymbol = collateralSymbol || "mETH";
+    const vaultCollateralPrice = vaultCollateralSymbol === "mETH" ? methPrice : fbtcPrice;
+
+    // Calculate live vault data from contract
+    const collateralAmount = vaultInfo ? parseFloat(vaultInfo.collateral) : 0;
+    const collateralValue = collateralAmount * vaultCollateralPrice;
+    const debtAmount = vaultInfo ? parseFloat(vaultInfo.debt) : 0;
+    const pendingYieldAmount = vaultInfo ? parseFloat(vaultInfo.pendingYield) : 0;
+    const pendingYieldValue = pendingYieldAmount * vaultCollateralPrice;
+    const healthFactor = vaultInfo ? vaultInfo.healthFactor : 0;
+
+    // Build live vault data object
+    const liveVaultData = {
+        health: Math.round(healthFactor),
         collateral: {
-            asset: "mETH",
-            amount: totalCollateral.toFixed(4),
-            value: totalCollateral * methPrice,
+            asset: vaultCollateralSymbol,
+            amount: collateralAmount.toFixed(4),
+            value: collateralValue,
         },
         loan: {
-            borrowed: parseFloat(vaultInfo.debt),
+            borrowed: debtAmount,
             currency: "USDC",
         },
         yield: {
-            total: parseFloat(vaultInfo.pendingYield) * methPrice,
-            monthly: parseFloat(vaultInfo.pendingYield) * methPrice * 0.1,
+            total: pendingYieldAmount,
+            monthly: pendingYieldAmount * 0.1, // Estimated monthly
         },
-    } : {
-        ...VAULT_DATA,
-        collateral: {
-            ...VAULT_DATA.collateral,
-            amount: totalCollateral.toFixed(4),
-            value: totalCollateral * 3500,
-        },
-        health: VAULT_DATA.health + (addedCollateral * 5),
+        transactions: historicalEvents.map((event) => {
+            const display = formatEventForDisplay(event);
+            return {
+                id: event.id,
+                type: display.title,
+                amount: display.amount,
+                date: formatRelativeTime(event.timestamp),
+                status: "Success",
+                hash: event.transactionHash,
+            };
+        }),
+        notifications,
     };
 
     // Actions
@@ -1147,26 +1232,62 @@ export default function VaultPage() {
         router.push("/");
     };
 
-    const handleConfirmAction = () => {
-        if (amount && parseFloat(amount) > 0) {
-            // Add collateral to local state based on selected asset
-            if (selectedAsset === "mETH") {
-                setAddedCollateral(prev => prev + parseFloat(amount));
+    // Handle adding collateral with proper approval flow
+    const handleConfirmAction = async () => {
+        if (!amount || parseFloat(amount) <= 0) return;
+
+        const amountInWei = parseEther(amount);
+        // Use the vault's collateral type (can't change it)
+        const tokenAddress = (vaultCollateralType === "mETH" ? CONTRACTS.METH : CONTRACTS.FBTC) as `0x${string}`;
+        const minHealthFactor = BigInt(2000000000000000000); // 200% (2.0 in 18 decimals)
+
+        try {
+            // Check if we need approval
+            if (currentAllowance < amountInWei) {
+                setTxStep("approving");
+                await approve(
+                    tokenAddress,
+                    CONTRACTS.VAULT_MANAGER as `0x${string}`,
+                    amountInWei
+                );
+                // Wait for approval to complete, then add collateral
+                // The useEffect watching isApproveSuccess will trigger allowance refresh
             } else {
-                setAddedFbtc(prev => prev + parseFloat(amount));
+                // Already approved, add collateral directly
+                setTxStep("adding");
+                await addCollateral(amountInWei);
             }
-
-            // Show success feedback
-            alert(`✅ Successfully added ${amount} ${selectedAsset} to your vault!`);
-
-            // Clear form and close modal
-            setAmount("");
-            setShowDepositModal(false);
-            setShowWithdrawModal(false);
-
-            // Switch to overview to see updated dashboard
-            setActiveView("overview");
+        } catch (error) {
+            console.error("Transaction failed:", error);
+            setTxStep("idle");
         }
+    };
+
+    // Effect to chain approval -> addCollateral
+    useEffect(() => {
+        if (isApproveSuccess && txStep === "approving" && amount) {
+            // After approval succeeds, add collateral
+            const amountInWei = parseEther(amount);
+            const tokenAddress = (vaultCollateralType === "mETH" ? CONTRACTS.METH : CONTRACTS.FBTC) as `0x${string}`;
+            const minHealthFactor = BigInt(2000000000000000000); // 200% (2.0 in 18 decimals)
+            setTxStep("adding");
+            addCollateral(amountInWei).catch((err) => {
+                console.error("Add collateral failed:", err);
+                setTxStep("idle");
+            });
+        }
+    }, [isApproveSuccess, txStep, amount, vaultCollateralType, addCollateral]);
+
+    // Determine button state
+    const isTransacting = txStep !== "idle" || isApproving || isApproveConfirming || isAddingCollateral || isAddCollateralConfirming;
+    const needsApproval = amount ? currentAllowance < parseEther(amount) : false;
+
+    const getButtonText = () => {
+        if (!amount || parseFloat(amount) <= 0) return "Enter Amount";
+        if (isApproving || isApproveConfirming) return `Approving ${vaultCollateralType}...`;
+        if (isAddingCollateral || isAddCollateralConfirming) return "Adding Collateral...";
+        if (needsApproval) return `Approve & Add ${amount} ${vaultCollateralType}`;
+        return `Add ${amount} ${vaultCollateralType}`;
     };
 
     const navItems = [
@@ -1179,7 +1300,7 @@ export default function VaultPage() {
     const renderContent = () => {
         switch (activeView) {
             case "overview": return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
-            case "collateral": return <CollateralView data={liveVaultData} onAddCollateral={() => setShowDepositModal(true)} />;
+            case "collateral": return <CollateralView data={liveVaultData} onAddCollateral={() => setShowDepositModal(true)} isFallbackPrice={vaultCollateralSymbol === "mETH" ? isMethPriceFallback : isFbtcPriceFallback} />;
             case "analytics": return <AnalyticsView />;
             default: return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
         }
@@ -1224,34 +1345,31 @@ export default function VaultPage() {
                 </div>
             </Modal>
 
-            {/* ADD COLLATERAL MODAL - Enhanced */}
-            <Modal isOpen={showDepositModal} onClose={() => setShowDepositModal(false)} title="Add Collateral">
+            {/* ADD COLLATERAL MODAL - Enhanced with real data */}
+            <Modal isOpen={showDepositModal} onClose={() => !isTransacting && setShowDepositModal(false)} title="Add Collateral">
                 <div className="space-y-4 relative z-10">
-                    {/* Asset Selector */}
+                    {/* Asset Display - Locked to vault's collateral type */}
                     <div className="bg-[#0A0A0A] p-4 rounded-2xl border border-white/5">
-                        <label className="text-[10px] text-gray-500 mb-3 block uppercase tracking-widest font-bold">Select Asset</label>
+                        <label className="text-[10px] text-gray-500 mb-3 block uppercase tracking-widest font-bold">Vault Collateral Asset</label>
                         <div className="flex gap-3">
-                            <button
-                                onClick={() => setSelectedAsset("mETH")}
-                                className={`flex-1 p-3 rounded-xl flex items-center gap-3 transition-all ${selectedAsset === "mETH" ? "bg-[#C3F53C]/10 border border-[#C3F53C]/30" : "bg-white/5 border border-white/10 hover:border-white/20"}`}
+                            <div
+                                className={`flex-1 p-3 rounded-xl flex items-center gap-3 ${vaultCollateralType === "mETH" ? "bg-blue-500/10 border border-blue-500/30" : "bg-orange-500/10 border border-orange-500/30"}`}
                             >
-                                <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">Ξ</div>
-                                <div className="text-left">
-                                    <div className="text-sm font-medium text-white">mETH</div>
-                                    <div className="text-[10px] text-gray-500">Mantle Staked ETH</div>
+                                <div className={`w-8 h-8 rounded-lg ${vaultCollateralType === "mETH" ? "bg-blue-500/20" : "bg-orange-500/20"} flex items-center justify-center ${vaultCollateralType === "mETH" ? "text-blue-400" : "text-orange-400"} font-bold text-sm`}>
+                                    {vaultCollateralType === "mETH" ? "Ξ" : "₿"}
                                 </div>
-                            </button>
-                            <button
-                                onClick={() => setSelectedAsset("fBTC")}
-                                className={`flex-1 p-3 rounded-xl flex items-center gap-3 transition-all ${selectedAsset === "fBTC" ? "bg-[#C3F53C]/10 border border-[#C3F53C]/30" : "bg-white/5 border border-white/10 hover:border-white/20"}`}
-                            >
-                                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold text-sm">₿</div>
                                 <div className="text-left">
-                                    <div className="text-sm font-medium text-white">fBTC</div>
-                                    <div className="text-[10px] text-gray-500">Wrapped BTC</div>
+                                    <div className="text-sm font-medium text-white">{vaultCollateralType}</div>
+                                    <div className="text-[10px] text-gray-500">{vaultCollateralType === "mETH" ? "Mantle Staked ETH" : "Wrapped BTC"}</div>
                                 </div>
-                            </button>
+                                <div className="ml-auto">
+                                    <span className="text-[9px] text-gray-500 bg-white/5 px-2 py-1 rounded-full">Locked</span>
+                                </div>
+                            </div>
                         </div>
+                        <p className="text-[10px] text-yellow-500/80 mt-2 flex items-center gap-1">
+                            <Lock className="w-3 h-3" /> You can only add more {vaultCollateralType} to this vault.
+                        </p>
                     </div>
 
                     {/* Amount Input */}
@@ -1260,10 +1378,13 @@ export default function VaultPage() {
                             <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Amount</label>
                             <div className="flex items-center gap-2">
                                 <span className="text-[10px] text-gray-500">Balance:</span>
-                                <span className="text-[10px] text-white font-mono">{selectedAsset === "mETH" ? "15.23 mETH" : "0.85 fBTC"}</span>
+                                <span className="text-[10px] text-white font-mono">
+                                    {parseFloat(currentBalance).toFixed(4)} {vaultCollateralType}
+                                </span>
                                 <button
-                                    onClick={() => setAmount(selectedAsset === "mETH" ? "15.23" : "0.85")}
-                                    className="text-[9px] text-[#C3F53C] font-bold px-2 py-0.5 rounded bg-[#C3F53C]/10 hover:bg-[#C3F53C]/20 transition-colors"
+                                    onClick={() => setAmount(currentBalance)}
+                                    disabled={isTransacting}
+                                    className="text-[9px] text-[#C3F53C] font-bold px-2 py-0.5 rounded bg-[#C3F53C]/10 hover:bg-[#C3F53C]/20 transition-colors disabled:opacity-50"
                                 >
                                     MAX
                                 </button>
@@ -1274,15 +1395,16 @@ export default function VaultPage() {
                                 type="number"
                                 placeholder="0.00"
                                 autoFocus
-                                className="flex-1 bg-transparent text-3xl font-display text-white placeholder:text-gray-800 focus:outline-none"
+                                disabled={isTransacting}
+                                className="flex-1 bg-transparent text-3xl font-display text-white placeholder:text-gray-800 focus:outline-none disabled:opacity-50"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
                             />
-                            <span className={`text-lg font-medium ${selectedAsset === "mETH" ? "text-blue-400" : "text-orange-400"}`}>{selectedAsset}</span>
+                            <span className={`text-lg font-medium ${vaultCollateralType === "mETH" ? "text-blue-400" : "text-orange-400"}`}>{vaultCollateralType}</span>
                         </div>
                         {amount && (
                             <div className="mt-2 text-xs text-gray-500">
-                                ≈ ${(parseFloat(amount || "0") * (selectedAsset === "mETH" ? 3500 : 97000)).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD
+                                ≈ ${(parseFloat(amount || "0") * currentPrice).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD
                             </div>
                         )}
                     </div>
@@ -1293,23 +1415,54 @@ export default function VaultPage() {
                         <div className="space-y-2">
                             <div className="flex justify-between text-sm">
                                 <span className="text-gray-400">New Collateral Value</span>
-                                <span className="text-white font-mono">${((parseFloat(liveVaultData.collateral.amount) * 3500) + (parseFloat(amount || "0") * (selectedAsset === "mETH" ? 3500 : 97000))).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                <span className="text-white font-mono">
+                                    ${(collateralValue + (parseFloat(amount || "0") * currentPrice)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-gray-400">New Health Factor</span>
-                                <span className="text-[#C3F53C] font-mono">+{amount ? Math.round(parseFloat(amount) * (selectedAsset === "mETH" ? 5 : 150)) : 0}%</span>
+                                <span className="text-[#C3F53C] font-mono">
+                                    +{amount ? Math.round(parseFloat(amount) * currentPrice / (debtAmount || 1) * 10) : 0}%
+                                </span>
                             </div>
                         </div>
                     </div>
 
+                    {/* Transaction Status */}
+                    {isTransacting && (
+                        <div className="bg-[#0A0A0A] p-4 rounded-2xl border border-[#C3F53C]/20">
+                            <div className="flex items-center gap-3">
+                                <Loader2 className="w-5 h-5 text-[#C3F53C] animate-spin" />
+                                <div>
+                                    <div className="text-sm font-medium text-white">
+                                        {txStep === "approving" ? "Approving Token..." : "Adding Collateral..."}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500">
+                                        {txStep === "approving"
+                                            ? "Please confirm the approval transaction in your wallet"
+                                            : "Please confirm the deposit transaction in your wallet"}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Action Button */}
                     <Button
                         onClick={handleConfirmAction}
-                        disabled={!amount || parseFloat(amount) <= 0}
-                        className="w-full bg-[#C3F53C] hover:bg-[#b2e035] text-black font-bold h-14 rounded-xl tracking-wide uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(195,245,60,0.3)]"
+                        disabled={!amount || parseFloat(amount) <= 0 || isTransacting || parseFloat(amount) > parseFloat(currentBalance)}
+                        className="w-full bg-[#C3F53C] hover:bg-[#b2e035] text-black font-bold h-14 rounded-xl tracking-wide uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(195,245,60,0.3)] flex items-center justify-center gap-2"
                     >
-                        {amount ? `Add ${amount} ${selectedAsset}` : "Enter Amount"}
+                        {isTransacting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {getButtonText()}
                     </Button>
+
+                    {/* Insufficient balance warning */}
+                    {amount && parseFloat(amount) > parseFloat(currentBalance) && (
+                        <div className="text-center text-xs text-red-400">
+                            Insufficient {vaultCollateralType} balance
+                        </div>
+                    )}
                 </div>
             </Modal>
             <Modal isOpen={showWithdrawModal} onClose={() => setShowWithdrawModal(false)} title="Withdraw Funds">
@@ -1400,21 +1553,69 @@ export default function VaultPage() {
     );
 }
 
-// --- MODAL COMPONENT (Re-declared for completeness if needed, or stick with previous) ---
+// --- MODAL COMPONENT ---
 function Modal({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) {
-    if (!isOpen) return null;
-    return (
-        <AnimatePresence>
-            {isOpen && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl" onClick={onClose}>
-                    <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="relative w-full max-w-sm p-6 rounded-3xl bg-[#0F0F0F] border border-white/10 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-                        <button onClick={onClose} className="absolute top-5 right-5 text-gray-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
-                        <h2 className="text-lg font-display font-medium text-white mb-6 tracking-wide">{title}</h2>
-                        {children}
-                    </motion.div>
-                </motion.div>
-            )}
-        </AnimatePresence>
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // Prevent body scroll when modal is open
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isOpen]);
+
+    if (!mounted || !isOpen) return null;
+
+    const modalContent = (
+        <div
+            className="fixed top-0 left-0 right-0 bottom-0 w-screen h-screen z-[9999] flex items-center justify-center"
+            style={{ margin: 0, padding: 0 }}
+        >
+            {/* Backdrop */}
+            <div
+                className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                onClick={onClose}
+            />
+
+            {/* Modal Content */}
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="relative w-[90%] max-w-md p-6 rounded-3xl bg-[#0F0F0F] border border-white/10 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Noise texture */}
+                <div className="absolute inset-0 opacity-[0.03] pointer-events-none rounded-3xl bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+
+                {/* Close button */}
+                <button
+                    onClick={onClose}
+                    className="absolute top-5 right-5 text-gray-500 hover:text-white transition-colors z-10"
+                >
+                    <X className="w-5 h-5" />
+                </button>
+
+                {/* Title */}
+                <h2 className="text-lg font-display font-medium text-white mb-6 tracking-wide">{title}</h2>
+
+                {/* Content */}
+                <div className="relative z-10">
+                    {children}
+                </div>
+            </motion.div>
+        </div>
     );
+
+    return createPortal(modalContent, document.body);
 }

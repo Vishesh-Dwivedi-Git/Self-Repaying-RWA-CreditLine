@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useWatchContractEvent } from "wagmi";
+// TEMPORARILY DISABLED - RPC rate limiting issues
+// import { useWatchContractEvent } from "wagmi";
 import { CONTRACTS, VAULT_MANAGER_ABI } from "@/lib/contracts";
 
 // Event ABIs
@@ -48,6 +49,8 @@ export function useContractEvents({
     onVaultClosed,
 }: UseContractEventsOptions) {
     // Watch for VaultCreated events
+    // TEMPORARILY DISABLED - RPC rate limiting issues on Mantle Sepolia
+    /*
     useWatchContractEvent({
         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
         abi: VAULT_EVENTS_ABI,
@@ -61,8 +64,11 @@ export function useContractEvents({
             });
         },
     });
+    */
 
     // Watch for AutoYieldApplied events
+    // TEMPORARILY DISABLED - RPC rate limiting issues on Mantle Sepolia
+    /*
     useWatchContractEvent({
         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
         abi: VAULT_EVENTS_ABI,
@@ -76,8 +82,11 @@ export function useContractEvents({
             });
         },
     });
+    */
 
     // Watch for VaultClosed events
+    // TEMPORARILY DISABLED - RPC rate limiting issues on Mantle Sepolia
+    /*
     useWatchContractEvent({
         address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
         abi: VAULT_EVENTS_ABI,
@@ -91,6 +100,7 @@ export function useContractEvents({
             });
         },
     });
+    */
 }
 
 export { VAULT_EVENTS_ABI };

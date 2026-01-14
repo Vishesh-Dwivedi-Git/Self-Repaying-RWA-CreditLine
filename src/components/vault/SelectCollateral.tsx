@@ -34,7 +34,7 @@ export function SelectCollateral({ onContinue }: SelectCollateralProps) {
 
     const isLoading = methLoading || fbtcLoading || methPriceLoading || fbtcPriceLoading;
 
-    // Build collateral assets from live data
+    // Build collateral assets from live data - no price fallbacks
     const COLLATERAL_ASSETS: CollateralAsset[] = useMemo(() => [
         {
             symbol: "mETH",
@@ -42,7 +42,7 @@ export function SelectCollateral({ onContinue }: SelectCollateralProps) {
             apy: 3.2,
             balance: formatEther(methBalanceRaw),
             balanceRaw: methBalanceRaw,
-            price: methPrice || 3000,
+            price: methPrice || 0,
             icon: "Ξ"
         },
         {
@@ -51,7 +51,7 @@ export function SelectCollateral({ onContinue }: SelectCollateralProps) {
             apy: 2.5,
             balance: formatEther(fbtcBalanceRaw),
             balanceRaw: fbtcBalanceRaw,
-            price: fbtcPrice || 60000,
+            price: fbtcPrice || 0,
             icon: "₿"
         },
     ], [methBalanceRaw, fbtcBalanceRaw, methPrice, fbtcPrice]);

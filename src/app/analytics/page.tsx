@@ -3,6 +3,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { useProtocolStats } from "@/hooks/useVaultData";
+import { useTVLData, formatTVL, formatTVLShort } from "@/hooks/useTVLData";
 import { Navbar } from "@/components/Navbar";
 import {
     TrendingUp,
@@ -118,6 +119,12 @@ const ChartPlaceholder = ({
 export default function AnalyticsPage() {
     const { totalVaults, totalRevenue, autoRepayments, isLoading } =
         useProtocolStats();
+    const { data: tvlData, isLoading: isTVLLoading } = useTVLData();
+
+    // Format TVL values for display
+    const totalTVLFormatted = formatTVL(tvlData.totalTVL);
+    const methTVLFormatted = formatTVLShort(tvlData.methTVL);
+    const fbtcTVLFormatted = formatTVLShort(tvlData.fbtcTVL);
 
     return (
         <main className="min-h-screen bg-[#050505] text-white">
@@ -283,11 +290,11 @@ export default function AnalyticsPage() {
                                         />
                                     </g>
 
-                                    {/* Floating Data Points */}
+                                    {/* Floating Data Points - Using live TVL */}
                                     {[
-                                        { cx: 100, cy: 100, val: "$1.8M" },
-                                        { cx: 250, cy: 70, val: "$2.1M" },
-                                        { cx: 400, cy: 40, val: "$2.4M" }
+                                        { cx: 100, cy: 100, val: isTVLLoading ? "..." : `$${methTVLFormatted}` },
+                                        { cx: 250, cy: 70, val: isTVLLoading ? "..." : `$${fbtcTVLFormatted}` },
+                                        { cx: 400, cy: 40, val: isTVLLoading ? "..." : totalTVLFormatted }
                                     ].map((pt, i) => (
                                         <motion.g
                                             key={i}
@@ -315,7 +322,7 @@ export default function AnalyticsPage() {
                                 {/* Holographic Tooltip Area */}
                                 <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur border border-blue-500/20 px-3 py-1.5 rounded-lg flex items-center gap-3">
                                     <div className="text-[10px] text-gray-400 font-mono">CURRENT TVL</div>
-                                    <div className="text-sm font-bold text-white">$2,140,000</div>
+                                    <div className="text-sm font-bold text-white">{isTVLLoading ? "Loading..." : totalTVLFormatted}</div>
                                 </div>
                             </div>
                         </motion.div>
@@ -364,7 +371,7 @@ export default function AnalyticsPage() {
                                         {/* Core Content */}
                                         <div className="relative z-10 text-center">
                                             <div className="text-[10px] text-gray-500 tracking-widest font-mono mb-1">TOTAL</div>
-                                            <div className="text-xl font-display font-bold text-white tracking-tighter">$2.4M</div>
+                                            <div className="text-xl font-display font-bold text-white tracking-tighter">{isTVLLoading ? "..." : totalTVLFormatted}</div>
                                         </div>
 
                                         {/* Energy Beams */}
@@ -439,9 +446,8 @@ export default function AnalyticsPage() {
                             {/* Data Panel (Right) */}
                             <div className="w-1/3 h-full border-l border-white/5 bg-white/[0.02] backdrop-blur-sm p-5 flex flex-col justify-center gap-4 relative z-20">
                                 {[
-                                    { symbol: "Ξ", name: "mETH", value: "1.44M", sub: "60%", color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
-                                    { symbol: "₿", name: "fBTC", value: "600K", sub: "25%", color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
-                                    { symbol: "◆", name: "Other", value: "360K", sub: "15%", color: "text-[#C3F53C]", bg: "bg-[#C3F53C]", border: "border-[#C3F53C]/20" },
+                                    { symbol: "Ξ", name: "mETH", value: methTVLFormatted, sub: `${tvlData.methPercentage.toFixed(0)}%`, color: "text-blue-400", bg: "bg-blue-500", border: "border-blue-500/20" },
+                                    { symbol: "₿", name: "fBTC", value: fbtcTVLFormatted, sub: `${tvlData.fbtcPercentage.toFixed(0)}%`, color: "text-orange-400", bg: "bg-orange-500", border: "border-orange-500/20" },
                                 ].map((item, i) => (
                                     <div key={i} className={`relative p-3 rounded-xl border ${item.border} bg-black/20 group hover:bg-white/5 transition-colors cursor-default`}>
                                         <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full ${item.bg} opacity-50 group-hover:opacity-100 transition-opacity`} />

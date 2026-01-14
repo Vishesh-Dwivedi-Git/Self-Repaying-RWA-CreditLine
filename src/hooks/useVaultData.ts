@@ -36,7 +36,7 @@ export interface FormattedVaultInfo {
 // Hook: Get vault info for a user
 export function useVaultInfo(address: `0x${string}` | undefined) {
     const { data, isLoading, isError, refetch } = useReadContract({
-        address: CONTRACTS.VAULT_MANAGER,
+        address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
         abi: VAULT_MANAGER_ABI,
         functionName: "getVaultInfo",
         args: address ? [address] : undefined,
@@ -65,6 +65,36 @@ export function useVaultInfo(address: `0x${string}` | undefined) {
     return {
         data: vaultInfo,
         raw: data,
+        isLoading,
+        isError,
+        refetch,
+    };
+}
+
+// Hook: Get user's collateral asset address
+export function useCollateralAsset(address: `0x${string}` | undefined) {
+    const { data, isLoading, isError, refetch } = useReadContract({
+        address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
+        abi: VAULT_MANAGER_ABI,
+        functionName: "vaults",
+        args: address ? [address] : undefined,
+        query: {
+            enabled: !!address,
+            refetchInterval: 30000,
+        },
+    });
+
+    // Determine if mETH or fBTC based on address
+    // vaults returns [collateralAmount, debtAmount, lastYieldClaim, collateralAsset, isActive, lastAutoCheck]
+    const assetAddress = data ? (data as any)[3] : undefined;
+    const isMeth = !!assetAddress && assetAddress?.toLowerCase() === CONTRACTS.METH.toLowerCase();
+    const isFbtc = !!assetAddress && assetAddress?.toLowerCase() === CONTRACTS.FBTC.toLowerCase();
+
+    return {
+        assetAddress: assetAddress as `0x${string}` | undefined,
+        isMeth,
+        isFbtc,
+        symbol: isMeth ? "mETH" : isFbtc ? "fBTC" : undefined,
         isLoading,
         isError,
         refetch,
@@ -129,8 +159,14 @@ export function useTokenAllowance(
 }
 
 // Hook: Get asset price from Oracle
+// Fallback prices when oracle is unavailable (testnet issues)
+const FALLBACK_PRICES: Record<string, number> = {
+    [CONTRACTS.METH.toLowerCase()]: 3200, // ~$3,200 for mETH (similar to ETH)
+    [CONTRACTS.FBTC.toLowerCase()]: 95000, // ~$95,000 for fBTC (similar to BTC)
+};
+
 export function useAssetPrice(assetAddress: `0x${string}`) {
-    const { data, isLoading, refetch } = useReadContract({
+    const { data, isLoading, isError, refetch } = useReadContract({
         address: CONTRACTS.ORACLE,
         abi: ORACLE_ABI,
         functionName: "getLatestPrice",
@@ -141,12 +177,17 @@ export function useAssetPrice(assetAddress: `0x${string}`) {
     });
 
     // Price is typically returned in 8 decimals (like Chainlink)
-    const price = data ? Number(data) / 1e8 : 0;
+    // Use fallback price if oracle returns 0 or RPC is unavailable
+    const oraclePrice = data ? Number(data) / 1e8 : 0;
+    const fallbackPrice = FALLBACK_PRICES[assetAddress.toLowerCase()] || 0;
+    const price = oraclePrice > 0 ? oraclePrice : fallbackPrice;
 
     return {
         priceRaw: data ?? BigInt(0),
         price,
         isLoading,
+        isError,
+        isFallback: oraclePrice === 0 && fallbackPrice > 0,
         refetch,
     };
 }

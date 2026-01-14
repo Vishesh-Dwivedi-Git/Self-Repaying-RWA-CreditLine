@@ -1,11 +1,11 @@
 // Smart Contract Addresses (Mantle Sepolia)
 // Deployed with SimplePriceOracle - Jan 14, 2026
 export const CONTRACTS = {
-    VAULT_MANAGER: "0xe98B06719298a232b9f9DFECE520Ee9e0Dfb24E2" as const,
-    ORACLE: "0x852fBfb70A449B303E3eA20a56F9e9D6b9cb1807" as const,
-    METH: "0x2EBF29b2371760995545abCdC8048cf7A1419Ce7" as const,
-    FBTC: "0xc767E9baf4444be3958F24CF1F20c9658Bb13b5D" as const,
-    USDC: "0x15bf55d9aF584C158f37D24826A4203B7e85BF23" as const,
+    VAULT_MANAGER: "0xbBfeD32470c2F9B01207083ecd4e7C7f4B5d76Ca" as const,
+    ORACLE: "0x77057304c6b2B1331E83E0D8Be18961f01eedfc4" as const,
+    METH: "0x514F4AF14a671beD0E4378b1CF62Bb28788617Fb" as const,
+    FBTC: "0xf257ec0A9A87597433bee54E802C1b309a432A17" as const,
+    USDC: "0x9525b1083914d898468232198f53858957BD3511" as const,
 } as const;
 
 // Minimal ABIs for contract interactions
@@ -46,6 +46,20 @@ export const VAULT_MANAGER_ABI = [
         inputs: [],
         outputs: [{ name: "", type: "uint256" }],
     },
+    {
+        name: "vaults",
+        type: "function",
+        stateMutability: "view",
+        inputs: [{ name: "user", type: "address" }],
+        outputs: [
+            { name: "collateralAmount", type: "uint256" },
+            { name: "debtAmount", type: "uint256" },
+            { name: "lastYieldClaim", "type": "uint256" },
+            { name: "collateralAsset", type: "address" },
+            { name: "isActive", type: "bool" },
+            { name: "lastAutoCheck", type: "uint256" },
+        ],
+    },
     // Write functions
     {
         name: "depositCollateralAndBorrow",
@@ -59,11 +73,55 @@ export const VAULT_MANAGER_ABI = [
         outputs: [],
     },
     {
+        name: "addCollateral",
+        type: "function",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "amount", type: "uint256" },
+        ],
+        outputs: [],
+    },
+    {
         name: "withdrawCollateral",
         type: "function",
         stateMutability: "nonpayable",
         inputs: [],
         outputs: [],
+    },
+    // Events
+    {
+        name: "VaultCreated",
+        type: "event",
+        inputs: [
+            { name: "user", type: "address", indexed: true },
+            { name: "collateral", type: "uint256", indexed: false },
+            { name: "debt", type: "uint256", indexed: false },
+        ],
+    },
+    {
+        name: "AutoYieldApplied",
+        type: "event",
+        inputs: [
+            { name: "user", type: "address", indexed: true },
+            { name: "yieldAmount", type: "uint256", indexed: false },
+            { name: "debtReduced", type: "uint256", indexed: false },
+        ],
+    },
+    {
+        name: "CollateralAdded",
+        type: "event",
+        inputs: [
+            { name: "user", type: "address", indexed: true },
+            { name: "amount", type: "uint256", indexed: false },
+        ],
+    },
+    {
+        name: "VaultClosed",
+        type: "event",
+        inputs: [
+            { name: "user", type: "address", indexed: true },
+            { name: "collateralReturned", type: "uint256", indexed: false },
+        ],
     },
 ] as const;
 

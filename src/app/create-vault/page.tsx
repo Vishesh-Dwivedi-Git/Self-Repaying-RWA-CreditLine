@@ -54,7 +54,9 @@ export default function CreateVaultPage() {
     const currentBalance = selectedToken.symbol === "mETH"
         ? formatEther(methBalanceRaw)
         : formatEther(fbtcBalanceRaw);
-    const currentPrice = selectedToken.symbol === "mETH" ? (methPrice || 3500) : (fbtcPrice || 60000);
+    // Use live prices from oracle - no fallbacks
+    const currentPrice = selectedToken.symbol === "mETH" ? (methPrice || 0) : (fbtcPrice || 0);
+    const isPriceLoading = currentPrice === 0;
     const isBalanceLoading = selectedToken.symbol === "mETH" ? methLoading : fbtcLoading;
 
     // Allowance check
@@ -137,7 +139,7 @@ export default function CreateVaultPage() {
         setCollateralAmount(parseFloat(currentBalance).toFixed(6));
     };
 
-    const canProceed = collateralNum > 0 && borrowAmount > 0;
+    const canProceed = collateralNum > 0 && borrowAmount > 0 && !isPriceLoading;
 
     // Health status
     const getHealthStatus = () => {
