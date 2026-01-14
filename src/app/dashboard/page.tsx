@@ -11,6 +11,7 @@ import { useApproveToken, useAddCollateral } from "@/hooks/useContractWrite";
 import { useContractEvents } from "@/hooks/useContractEvents";
 import { useHistoricalEvents, formatRelativeTime, formatEventForDisplay } from "@/hooks/useHistoricalEvents";
 import { useTVLData, formatTVL, formatTVLShort } from "@/hooks/useTVLData";
+import { useKeeperStatus } from "@/hooks/useKeeperStatus";
 import { CONTRACTS, TOKENS } from "@/lib/contracts";
 import {
     LayoutDashboard,
@@ -44,6 +45,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
+
+const MIN_YIELD = 0.001; // mETH - Minimum yield threshold for auto-repayment
 
 // --- SUB-COMPONENTS ---
 
@@ -157,34 +160,79 @@ const DigitalReadout = ({ value, label }: { value: string, label: string }) => (
 );
 
 // 4. Yield Reactor (Vertical)
-const YieldReactor = ({ amount, asset, usdValue }: { amount: number, asset: string, usdValue: string }) => (
-    <div className="h-full flex flex-col relative overflow-hidden">
-        {/* Core Animation Background */}
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#C3F53C]/20 to-transparent blur-2xl opacity-60" />
+const YieldReactor = ({ amount, asset, usdValue, minYield }: { amount: number, asset: string, usdValue: string, minYield: number }) => {
+    const { secondsUntilNextScan, isScanning } = useKeeperStatus();
 
-        <div className="relative z-10 flex flex-col h-full bg-white/[0.01] rounded-[1.5rem] border border-white/5 p-5">
-            <div className="flex justify-between items-start">
-                <div className="p-2 rounded-lg bg-[#C3F53C]/10 border border-[#C3F53C]/20">
-                    <TrendingUp className="w-5 h-5 text-[#C3F53C]" />
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Calculate progress towards auto-repayment
+    const progressPercent = Math.min((amount / minYield) * 100, 100);
+    const isReady = amount >= minYield;
+
+    return (
+        <div className="h-full flex flex-col relative overflow-hidden">
+            {/* Core Animation Background */}
+            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#C3F53C]/20 to-transparent blur-2xl opacity-60" />
+
+            <div className="relative z-10 flex flex-col h-full bg-white/[0.01] rounded-[1.5rem] border border-white/5 p-5">
+                <div className="flex justify-between items-start">
+                    <div className="p-2 rounded-lg bg-[#C3F53C]/10 border border-[#C3F53C]/20">
+                        <TrendingUp className="w-5 h-5 text-[#C3F53C]" />
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <span className="text-[9px] font-mono text-[#C3F53C] animate-pulse">{isScanning ? 'SCANNING...' : 'REACTION ACTIVE'}</span>
+                        <div className="flex items-center gap-1 mt-1">
+                            <RefreshCw className={`w-3 h-3 text-gray-500 ${isScanning ? 'animate-spin' : ''}`} />
+                            <span className="text-xl font-mono text-white font-bold">{formatTime(secondsUntilNextScan)}</span>
+                        </div>
+                        <span className="text-[8px] text-gray-500 mt-0.5">Next Check</span>
+                    </div>
                 </div>
-                <span className="text-[9px] font-mono text-[#C3F53C] animate-pulse">REACTION ACTIVE</span>
-            </div>
 
-            <div className="mt-auto">
-                <h3 className="text-[9px] uppercase tracking-[0.25em] text-gray-400 mb-2">Pending Yield</h3>
-                <div className="text-3xl font-display font-medium text-white tracking-tight leading-none mb-1">
-                    {amount.toFixed(6)}
+                {/* Progress Bar Graphic - Auto Repayment Threshold */}
+                <div className="mt-4">
+                    <div className="flex justify-between text-[9px] text-gray-500 mb-1 uppercase tracking-wider">
+                        <span>Auto-Repay Progress</span>
+                        <span className={isReady ? "text-[#C3F53C] animate-pulse" : ""}>{progressPercent.toFixed(0)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden relative">
+                        {/* Threshold Marker */}
+                        <div className="absolute left-[100%] top-0 bottom-0 w-0.5 bg-white/20 z-10" />
+
+                        <div
+                            className={cn(
+                                "h-full shadow-[0_0_10px_rgba(195,245,60,0.5)] transition-all duration-1000 ease-out",
+                                isReady ? "bg-[#C3F53C]" : "bg-gradient-to-r from-blue-500 to-[#C3F53C]"
+                            )}
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                    </div>
+                    <div className="flex justify-between text-[8px] text-gray-600 mt-1 font-mono">
+                        <span>0</span>
+                        <span>{minYield} {asset}</span>
+                    </div>
                 </div>
-                <div className="text-sm text-gray-400 font-mono mb-4">{asset}</div>
 
-                <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/10 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-500">Est. Value</span>
-                    <span className="text-sm font-medium text-[#C3F53C]">${usdValue}</span>
+                <div className="mt-auto">
+                    <h3 className="text-[9px] uppercase tracking-[0.25em] text-gray-400 mb-2">Pending Yield</h3>
+                    <div className="text-3xl font-display font-medium text-white tracking-tight leading-none mb-1">
+                        {amount.toFixed(6)}
+                    </div>
+                    <div className="text-sm text-gray-400 font-mono mb-4">{asset}</div>
+
+                    <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/10 flex items-center justify-between">
+                        <span className="text-[10px] text-gray-500">Est. Value</span>
+                        <span className="text-sm font-medium text-[#C3F53C]">${usdValue}</span>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 // 5. Activity Terminal (List)
 const ActivityTerminal = ({ transactions }: { transactions: any[] }) => (
@@ -200,18 +248,18 @@ const ActivityTerminal = ({ transactions }: { transactions: any[] }) => (
             </div>
         </div>
 
-        <div className="flex-1 overflow-hidden relative font-mono text-[10px] space-y-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative font-mono text-[10px] space-y-2 max-h-[200px] pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#444 transparent' }}>
             {/* Scanline */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#C3F53C]/5 to-transparent h-4 w-full animate-[scan_4s_linear_infinite] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#C3F53C]/5 to-transparent h-4 w-full animate-[scan_4s_linear_infinite] pointer-events-none z-10" />
 
-            {transactions.slice(0, 3).map((tx, i) => (
-                <div key={i} className="flex justify-between items-center text-gray-400 hover:text-white transition-colors group cursor-pointer p-1.5 hover:bg-white/5 rounded">
+            {transactions.map((tx) => (
+                <div key={tx.id} className="flex justify-between items-center text-gray-400 hover:text-white transition-colors group cursor-pointer p-1.5 hover:bg-white/5 rounded">
                     <div className="flex items-center gap-2">
                         <span className="text-[#C3F53C] opacity-50 group-hover:opacity-100">{">"}</span>
                         <span>[{tx.date}]</span>
-                        <span className={tx.type === "Harvest" ? "text-blue-400" : "text-white"}>{tx.type.toUpperCase()}</span>
+                        <span className={tx.type === "Harvest" || tx.type === "Yield Applied" ? "text-blue-400" : "text-white"}>{tx.type.toUpperCase()}</span>
                     </div>
-                    <span>{tx.amount}</span>
+                    <span className="truncate max-w-[80px]">{tx.amount}</span>
                 </div>
             ))}
             {transactions.length === 0 && <div className="text-gray-600 italic pl-4">{">"} System idle...</div>}
@@ -285,7 +333,7 @@ const LayerCard = ({
 );
 
 
-const OverviewView = ({ data, setShowDepositModal }: any) => {
+const OverviewView = ({ data, setShowDepositModal, healthFactor }: any) => {
     // Health status helper
     const getHealthStatus = (health: number) => {
         if (health >= 150) return { label: "SAFE", color: "text-[#C3F53C]", bg: "bg-[#C3F53C]" };
@@ -358,7 +406,7 @@ const OverviewView = ({ data, setShowDepositModal }: any) => {
 
                 {/* 2. Yield Reactor (1x2 Vertical) */}
                 <BentoCard className="md:col-span-1 md:row-span-2 p-0 min-h-[200px] md:min-h-0" delay={0.1}>
-                    <YieldReactor amount={data.yield.total} asset={data.collateral.asset} usdValue={formattedYieldUsd} />
+                    <YieldReactor amount={data.yield.total} asset={data.collateral.asset} usdValue={formattedYieldUsd} minYield={data.yield.minYield || MIN_YIELD} />
                 </BentoCard>
 
                 {/* 3. Health Gauge (1x1) */}
@@ -1099,11 +1147,19 @@ export default function VaultPage() {
     const debtAmount = vaultInfo ? parseFloat(vaultInfo.debt) : 0;
     const pendingYieldAmount = vaultInfo ? parseFloat(vaultInfo.pendingYield) : 0;
     const pendingYieldValue = pendingYieldAmount * vaultCollateralPrice;
-    const healthFactor = vaultInfo ? vaultInfo.healthFactor : 0;
+    const healthFactor = vaultInfo ? vaultInfo.healthFactor : "no data";
+    console.log("Health Factor:", healthFactor);
+    console.log("Type of Health Factor:", typeof healthFactor);
+    console.log("pendingYieldAmount:", pendingYieldAmount);
+
+    // Debug: Log vault data
+    console.log("Vault Info Debug:", {
+        vaultInfo
+    });
 
     // Build live vault data object
     const liveVaultData = {
-        health: Math.round(healthFactor),
+        health: (typeof healthFactor === 'number' ? (healthFactor*100).toFixed(2) : 0),
         collateral: {
             asset: vaultCollateralSymbol,
             amount: collateralAmount.toFixed(4),
@@ -1116,20 +1172,45 @@ export default function VaultPage() {
         yield: {
             total: pendingYieldAmount,
             monthly: pendingYieldAmount * 0.1, // Estimated monthly
+            minYield: MIN_YIELD,
         },
-        transactions: historicalEvents.map((event) => {
-            const display = formatEventForDisplay(event);
-            return {
-                id: event.id,
-                type: display.title,
-                amount: display.amount,
-                date: formatRelativeTime(event.timestamp),
-                status: "Success",
-                hash: event.transactionHash,
-            };
-        }),
+        transactions: (() => {
+            // Get historical events formatted with unique IDs
+            const historical = historicalEvents.map((event) => {
+                const display = formatEventForDisplay(event);
+                return {
+                    id: `hist-${event.transactionHash}-${event.id}`,
+                    type: display.title,
+                    amount: display.amount,
+                    date: formatRelativeTime(event.timestamp),
+                    status: "Success",
+                    hash: event.transactionHash,
+                };
+            });
+            // Only show notifications that aren't yet in historical events
+            // Clear notifications older than 10 seconds to avoid permanent duplicates
+            const recentNotifications = notifications
+                .filter(n => {
+                    const isRecent = Date.now() - n.id < 10000; // Only show for 10 seconds
+                    const amountStr = n.desc.split(' ')[0];
+                    const notInHistory = !historical.some(h =>
+                        h.type === n.title && h.amount.includes(amountStr)
+                    );
+                    return isRecent && notInHistory;
+                })
+                .map((n) => ({
+                    id: `notif-${n.id}`,
+                    type: n.title,
+                    amount: n.desc.replace(' deposited', ''),
+                    date: n.time,
+                    status: "Success",
+                    hash: "Pending...",
+                }));
+            return [...recentNotifications, ...historical];
+        })(),
         notifications,
     };
+    console.log("Live Vault Data:", liveVaultData);
 
     // Actions
     const handleBack = () => setShowBackPopup(true);
@@ -1206,10 +1287,10 @@ export default function VaultPage() {
     // Helper to render active view
     const renderContent = () => {
         switch (activeView) {
-            case "overview": return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
+            case "overview": return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} healthFactor={healthFactor} />;
             case "collateral": return <CollateralView data={liveVaultData} onAddCollateral={() => setShowDepositModal(true)} isFallbackPrice={vaultCollateralSymbol === "mETH" ? isMethPriceFallback : isFbtcPriceFallback} />;
             case "analytics": return <AnalyticsView />;
-            default: return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} />;
+            default: return <OverviewView data={liveVaultData} setShowDepositModal={setShowDepositModal} healthFactor={healthFactor} />;
         }
     };
 
