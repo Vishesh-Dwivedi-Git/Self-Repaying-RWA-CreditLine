@@ -1,7 +1,7 @@
 // Smart Contract Addresses (Mantle Sepolia)
 // Deployed with SimplePriceOracle - Jan 14, 2026
 export const CONTRACTS = {
-    VAULT_MANAGER: "0xbBfeD32470c2F9B01207083ecd4e7C7f4B5d76Ca" as const,
+    VAULT_MANAGER: "0xd964f2d9057997c3261af1046c486e7Eb278cB9F" as const,
     ORACLE: "0x77057304c6b2B1331E83E0D8Be18961f01eedfc4" as const,
     METH: "0x514F4AF14a671beD0E4378b1CF62Bb28788617Fb" as const,
     FBTC: "0xf257ec0A9A87597433bee54E802C1b309a432A17" as const,
