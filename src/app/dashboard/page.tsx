@@ -103,7 +103,9 @@ const BentoCard = ({ children, className, delay = 0 }: { children: React.ReactNo
 const HoloGauge = ({ percentage }: { percentage: number }) => {
     // 0-200 scale mapped to 0-100 for circle
     const normalized = Math.min((percentage / 200) * 100, 100);
-    const circumference = 2 * Math.PI * 40;
+    const gaugeRadius = 56;
+    const gaugeCenter = 64;
+    const circumference = 2 * Math.PI * gaugeRadius;
     const offset = circumference - (normalized / 100) * circumference;
 
     return (
@@ -117,12 +119,12 @@ const HoloGauge = ({ percentage }: { percentage: number }) => {
             </div>
 
             {/* Main Gauge */}
-            <svg className="w-24 h-24 transform -rotate-90 relative z-10 drop-shadow-[0_0_10px_rgba(195,245,60,0.3)]">
+            <svg className="w-32 h-32 transform -rotate-90 relative z-10 drop-shadow-[0_0_10px_rgba(195,245,60,0.3)]">
                 {/* Track */}
-                <circle cx="48" cy="48" r="40" className="stroke-white/5" strokeWidth="6" fill="transparent" />
+                <circle cx={gaugeCenter} cy={gaugeCenter} r={gaugeRadius} className="stroke-white/5" strokeWidth="6" fill="transparent" />
                 {/* Progress */}
                 <circle
-                    cx="48" cy="48" r="40"
+                    cx={gaugeCenter} cy={gaugeCenter} r={gaugeRadius}
                     className="stroke-[#C3F53C] transition-[stroke-dashoffset] duration-1000 ease-out"
                     strokeWidth="6"
                     fill="transparent"
@@ -159,8 +161,41 @@ const DigitalReadout = ({ value, label }: { value: string, label: string }) => (
     </div>
 );
 
-// 4. Yield Reactor (Vertical)
-const YieldReactor = ({ amount, asset, usdValue, minYield }: { amount: number, asset: string, usdValue: string, minYield: number }) => {
+// 4. Yield Reactor (Pending Yield Only)
+const YieldReactor = ({ amount, asset, usdValue }: { amount: number, asset: string, usdValue: string }) => {
+    return (
+        <div className="h-full flex flex-col relative overflow-hidden p-5">
+            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#C3F53C]/20 to-transparent blur-2xl opacity-60" />
+            
+            <div className="relative z-10 flex flex-col h-full justify-between">
+                <div className="flex justify-between items-start">
+                    <div className="p-2 rounded-lg bg-[#C3F53C]/10 border border-[#C3F53C]/20">
+                        <TrendingUp className="w-5 h-5 text-[#C3F53C]" />
+                    </div>
+                    <span className="text-[9px] font-mono text-[#C3F53C] bg-[#C3F53C]/10 px-2 py-1 rounded-full animate-pulse border border-[#C3F53C]/20">
+                        YIELDING
+                    </span>
+                </div>
+
+                <div className="mt-auto">
+                    <h3 className="text-[9px] uppercase tracking-[0.25em] text-gray-400 mb-2">Pending Yield</h3>
+                    <div className="text-3xl font-display font-medium text-white tracking-tight leading-none mb-1">
+                        {amount.toFixed(6)}
+                    </div>
+                    <div className="text-sm text-gray-400 font-mono mb-4">{asset}</div>
+
+                    <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/10 flex items-center justify-between relative z-20">
+                        <span className="text-[10px] text-gray-500">Est. Value</span>
+                        <span className="text-sm font-medium text-[#C3F53C]">${usdValue}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// 4.1 Auto Repay Progress (New Component)
+const AutoRepayProgress = ({ amount, minYield, asset }: { amount: number, minYield: number, asset: string }) => {
     const { secondsUntilNextScan, isScanning } = useKeeperStatus();
 
     const formatTime = (seconds: number) => {
@@ -174,60 +209,40 @@ const YieldReactor = ({ amount, asset, usdValue, minYield }: { amount: number, a
     const isReady = amount >= minYield;
 
     return (
-        <div className="h-full flex flex-col relative overflow-hidden">
-            {/* Core Animation Background */}
-            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#C3F53C]/20 to-transparent blur-2xl opacity-60" />
-
-            <div className="relative z-10 flex flex-col h-full bg-white/[0.01] rounded-[1.5rem] border border-white/5 p-5">
-                <div className="flex justify-between items-start">
-                    <div className="p-2 rounded-lg bg-[#C3F53C]/10 border border-[#C3F53C]/20">
-                        <TrendingUp className="w-5 h-5 text-[#C3F53C]" />
-                    </div>
-                    <div className="flex flex-col items-end">
-                        <span className="text-[9px] font-mono text-[#C3F53C] animate-pulse">{isScanning ? 'SCANNING...' : 'REACTION ACTIVE'}</span>
-                        <div className="flex items-center gap-1 mt-1">
-                            <RefreshCw className={`w-3 h-3 text-gray-500 ${isScanning ? 'animate-spin' : ''}`} />
-                            <span className="text-xl font-mono text-white font-bold">{formatTime(secondsUntilNextScan)}</span>
-                        </div>
-                        <span className="text-[8px] text-gray-500 mt-0.5">Next Check</span>
-                    </div>
+        <div className="h-full flex flex-col justify-between relative overflow-hidden p-5">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
+            
+            <div className="flex justify-between items-start relative z-10">
+                <div className="flex items-center gap-2">
+                    <RefreshCw className={`w-4 h-4 text-gray-500 ${isScanning ? 'animate-spin' : ''}`} />
+                    <span className="text-[10px] uppercase tracking-widest text-gray-400">Auto-Repay</span>
                 </div>
-
-                {/* Progress Bar Graphic - Auto Repayment Threshold */}
-                <div className="mt-4">
-                    <div className="flex justify-between text-[9px] text-gray-500 mb-1 uppercase tracking-wider">
-                        <span>Auto-Repay Progress</span>
-                        <span className={isReady ? "text-[#C3F53C] animate-pulse" : ""}>{progressPercent.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden relative">
-                        {/* Threshold Marker */}
-                        <div className="absolute left-[100%] top-0 bottom-0 w-0.5 bg-white/20 z-10" />
-
-                        <div
-                            className={cn(
-                                "h-full shadow-[0_0_10px_rgba(195,245,60,0.5)] transition-all duration-1000 ease-out",
-                                isReady ? "bg-[#C3F53C]" : "bg-gradient-to-r from-blue-500 to-[#C3F53C]"
-                            )}
-                            style={{ width: `${progressPercent}%` }}
-                        />
-                    </div>
-                    <div className="flex justify-between text-[8px] text-gray-600 mt-1 font-mono">
-                        <span>0</span>
-                        <span>{minYield} {asset}</span>
-                    </div>
+                <div className="flex flex-col items-end">
+                    <span className="text-xl font-mono text-white font-bold leading-none">{formatTime(secondsUntilNextScan)}</span>
+                    <span className="text-[8px] text-gray-500 mt-1">{isScanning ? 'SCANNING' : 'NEXT CHECK'}</span>
                 </div>
+            </div>
 
-                <div className="mt-auto">
-                    <h3 className="text-[9px] uppercase tracking-[0.25em] text-gray-400 mb-2">Pending Yield</h3>
-                    <div className="text-3xl font-display font-medium text-white tracking-tight leading-none mb-1">
-                        {amount.toFixed(6)}
-                    </div>
-                    <div className="text-sm text-gray-400 font-mono mb-4">{asset}</div>
+            <div className="relative z-10 mt-2">
+                <div className="flex justify-between text-[9px] text-gray-500 mb-2 uppercase tracking-wider">
+                    <span>Progress to Repay</span>
+                    <span className={isReady ? "text-[#C3F53C] animate-pulse" : ""}>{progressPercent.toFixed(0)}%</span>
+                </div>
+                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden relative">
+                    {/* Threshold Marker */}
+                    <div className="absolute left-[100%] top-0 bottom-0 w-0.5 bg-white/20 z-10" />
 
-                    <div className="p-3 rounded-xl bg-[#0F0F0F] border border-white/10 flex items-center justify-between">
-                        <span className="text-[10px] text-gray-500">Est. Value</span>
-                        <span className="text-sm font-medium text-[#C3F53C]">${usdValue}</span>
-                    </div>
+                    <div
+                        className={cn(
+                            "h-full shadow-[0_0_10px_rgba(195,245,60,0.5)] transition-all duration-1000 ease-out",
+                            isReady ? "bg-[#C3F53C]" : "bg-gradient-to-r from-blue-500 to-[#C3F53C]"
+                        )}
+                        style={{ width: `${progressPercent}%` }}
+                    />
+                </div>
+                <div className="flex justify-between text-[8px] text-gray-600 mt-1.5 font-mono">
+                    <span>0</span>
+                    <span>{minYield} {asset}</span>
                 </div>
             </div>
         </div>
@@ -406,7 +421,7 @@ const OverviewView = ({ data, setShowDepositModal, healthFactor }: any) => {
 
                 {/* 2. Yield Reactor (1x2 Vertical) */}
                 <BentoCard className="md:col-span-1 md:row-span-2 p-0 min-h-[200px] md:min-h-0" delay={0.1}>
-                    <YieldReactor amount={data.yield.total} asset={data.collateral.asset} usdValue={formattedYieldUsd} minYield={data.yield.minYield || MIN_YIELD} />
+                    <YieldReactor amount={data.yield.total} asset={data.collateral.asset} usdValue={formattedYieldUsd} />
                 </BentoCard>
 
                 {/* 3. Health Gauge (1x1) */}
@@ -419,7 +434,12 @@ const OverviewView = ({ data, setShowDepositModal, healthFactor }: any) => {
                     <DigitalReadout label="Debt Load" value={`$${data.loan.borrowed.toLocaleString()}`} />
                 </BentoCard>
 
-                {/* Activity Terminal (Span 4) */}
+                {/* 5. Auto Repay Progress (Span 4) */}
+                <BentoCard className="col-span-1 md:col-span-4 md:row-span-1 p-0 min-h-[120px] md:min-h-[120px]" delay={0.4}>
+                     <AutoRepayProgress amount={data.yield.total} asset={data.collateral.asset} minYield={data.yield.minYield || MIN_YIELD} />
+                </BentoCard>
+
+                {/* 6. Activity Terminal (Span 4) */}
                 <BentoCard className="col-span-1 md:col-span-4 md:row-span-1 p-4 min-h-[160px] md:min-h-[140px]" delay={0.5}>
                     <ActivityTerminal transactions={data.transactions} />
                 </BentoCard>
@@ -1159,7 +1179,7 @@ export default function VaultPage() {
 
     // Build live vault data object
     const liveVaultData = {
-        health: (typeof healthFactor === 'number' ? ((healthFactor)/10e11).toFixed(2) : 0),
+        health: (typeof healthFactor === 'number' ? ((healthFactor)/10e10).toFixed(2) : 0),
         collateral: {
             asset: vaultCollateralSymbol,
             amount: collateralAmount.toFixed(4),
