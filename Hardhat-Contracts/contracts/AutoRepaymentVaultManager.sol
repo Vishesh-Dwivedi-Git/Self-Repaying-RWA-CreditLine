@@ -156,8 +156,9 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
         require(vault.isActive && vault.debtAmount > 0, "Invalid vault");
 
         // 1. YIELD FIRST (cheap check)
+        // Note: Use address(this) since collateral is held by VaultManager, not user
         uint256 pendingYield = IYieldBearingAsset(vault.collateralAsset)
-            .getPendingYield(user);
+            .getPendingYield(address(this));
         require(pendingYield >= minYieldThreshold, "Yield too low");
 
         // 2. PRICE ONLY NOW (expensive - oracle call)
@@ -168,9 +169,9 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
         uint256 healthFactor = (collateralValue * 100) / vault.debtAmount;
         require(healthFactor >= 120, "Unhealthy vault"); // Safety check
 
-        // 3. Claim yield from collateral asset
+        // 3. Claim yield from collateral asset (from VaultManager's balance)
         uint256 yieldEarned = IYieldBearingAsset(vault.collateralAsset)
-            .claimYield(user);
+            .claimYield(address(this));
         if (yieldEarned == 0) return; // No yield available
 
         // Split: 80% debt repayment, 20% protocol fee
@@ -275,8 +276,9 @@ contract AutoRepaymentVaultManager is ReentrancyGuard, Ownable {
 
         collateral = vault.collateralAmount;
         debt = vault.debtAmount;
+        // Use address(this) since collateral is held by VaultManager
         pendingYield = IYieldBearingAsset(vault.collateralAsset)
-            .getPendingYield(user);
+            .getPendingYield(address(this));
 
         if (debt > 0) {
             uint256 collateralValue = IPriceOracle(priceOracle).getAssetValue(
