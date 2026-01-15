@@ -331,6 +331,7 @@ app.get('/api/status', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
+    console.log("Api is running");
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
