@@ -287,9 +287,16 @@ class OptimizedKeeper {
                         // First try static call to get revert reason if it would fail
                         await vaultManager.processAutoRepayment.staticCall(candidate.owner);
 
+                        // Estimate gas for Mantle L2 (includes L1 data costs)
+                        const estimatedGas = await vaultManager.processAutoRepayment.estimateGas(candidate.owner);
+                        // Add 20% buffer to estimated gas
+                        const gasLimit = (estimatedGas * 120n) / 100n;
+
+                        console.log(`  ⛽ Estimated gas: ${estimatedGas}, using: ${gasLimit}`);
+
                         // If static call succeeds, send actual transaction
                         const tx = await vaultManager.processAutoRepayment(candidate.owner, {
-                            gasLimit: 80_000_000
+                            gasLimit: gasLimit
                         });
                         const receipt = await tx.wait();
                         console.log(`  ✅ Processed | Tx: ${receipt?.hash?.slice(0, 16)}... | Gas: ${receipt?.gasUsed}`);
