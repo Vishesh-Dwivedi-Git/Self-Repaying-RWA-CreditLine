@@ -22,7 +22,7 @@ A DeFi protocol enabling **self-repaying loans** backed by yield-bearing Real Wo
 
 | Contract | Address |
 |----------|---------|
-| **VaultManager** | [`0xb291DFBdad62428108B7BC60dB7592a59c476Ff4`](https://sepolia.mantlescan.xyz/address/0xb291DFBdad62428108B7BC60dB7592a59c476Ff4) |
+| **VaultManager** | [`0xd964f2d9057997c3261af1046c486e7Eb278cB9F`](https://sepolia.mantlescan.xyz/address/0xd964f2d9057997c3261af1046c486e7Eb278cB9F) |
 | **PriceOracle** | [`0x8Af74166bD472428b9f330324582DCDe83ac60B5`](https://sepolia.mantlescan.xyz/address/0x8Af74166bD472428b9f330324582DCDe83ac60B5) |
 | **MockMETH** | [`0xd214a67947A4576B99a7A971ba285B59291E88A5`](https://sepolia.mantlescan.xyz/address/0xd214a67947A4576B99a7A971ba285B59291E88A5) |
 | **MockFBTC** | [`0xA67B9cAb3869B61094C1eA3DC87E540AF43342Ec`](https://sepolia.mantlescan.xyz/address/0xA67B9cAb3869B61094C1eA3DC87E540AF43342Ec) |
