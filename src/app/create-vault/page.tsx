@@ -126,7 +126,9 @@ export default function CreateVaultPage() {
 
     const handleCreate = () => {
         if (!collateralWei || borrowAmount <= 0) return;
-        const borrowWei = parseUnits(borrowAmount.toFixed(6), 6); // USDC has 6 decimals
+        // borrowAmount is in USD, USDC is 1:1 with USD and has 6 decimals
+        // So $1,120 should become 1,120 * 10^6 = 1,120,000,000 (6 decimals)
+        const borrowWei = parseUnits(borrowAmount.toFixed(2), 6); // USDC has 6 decimals
         createVault({
             address: CONTRACTS.VAULT_MANAGER as `0x${string}`,
             abi: VAULT_MANAGER_ABI,

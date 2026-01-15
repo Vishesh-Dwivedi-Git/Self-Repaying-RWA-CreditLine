@@ -176,9 +176,9 @@ export function useAssetPrice(assetAddress: `0x${string}`) {
         },
     });
 
-    // Price is typically returned in 8 decimals (like Chainlink)
+    // Price is returned in 18 decimals (standard EVM decimal format)
     // Use fallback price if oracle returns 0 or RPC is unavailable
-    const oraclePrice = data ? Number(data) / 1e8 : 0;
+    const oraclePrice = data ? Number(data) / 1e18 : 0;
     const fallbackPrice = FALLBACK_PRICES[assetAddress.toLowerCase()] || 0;
     const price = oraclePrice > 0 ? oraclePrice : fallbackPrice;
 
