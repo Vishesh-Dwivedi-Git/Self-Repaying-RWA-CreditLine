@@ -2,12 +2,14 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import anime from "animejs/lib/anime.es.js";
-import { ChevronRight, Wallet } from "lucide-react";
+import { ChevronRight, Wallet, Activity, TrendingUp, RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Navbar } from "@/components/Navbar";
 import { TrustedBy } from "@/components/TrustedBy";
 import { PremiumButton } from "@/components/ui/PremiumButton";
+import { useProtocolStats } from "@/hooks/useVaultData";
+import { useTVLData, formatTVL } from "@/hooks/useTVLData";
 
 export default function HeroFlow() {
     const svgRef = useRef<SVGSVGElement>(null);
@@ -15,6 +17,10 @@ export default function HeroFlow() {
     const [showWalletPrompt, setShowWalletPrompt] = useState(false);
     const router = useRouter();
     const { isConnected } = useAccount();
+    
+    // Live protocol stats (no wallet required)
+    const { totalVaults, totalRevenue, autoRepayments, isLoading: isStatsLoading } = useProtocolStats();
+    const { data: tvlData, isLoading: isTVLLoading } = useTVLData();
 
     useEffect(() => {
         setMounted(true);
@@ -92,16 +98,22 @@ export default function HeroFlow() {
                     {/* Stats Row - Wraps on mobile */}
                     <div className="flex flex-wrap gap-6 md:gap-8 pt-2">
                         <div>
-                            <div className="text-xl md:text-3xl font-display font-semibold text-white tracking-tight">70%</div>
-                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">Max LTV</div>
+                            <div className="text-xl md:text-3xl font-display font-semibold text-white tracking-tight">
+                                {isTVLLoading ? "..." : formatTVL(tvlData.totalTVL)}
+                            </div>
+                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">Total TVL</div>
                         </div>
                         <div>
-                            <div className="text-xl md:text-3xl font-display font-semibold text-[#C3F53C] tracking-tight">~4%</div>
-                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">Native APY</div>
+                            <div className="text-xl md:text-3xl font-display font-semibold text-[#C3F53C] tracking-tight">
+                                {isStatsLoading ? "..." : totalVaults.toLocaleString()}
+                            </div>
+                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">Active Vaults</div>
                         </div>
                         <div>
-                            <div className="text-xl md:text-3xl font-display font-semibold text-white tracking-tight">85%</div>
-                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">To Repayment</div>
+                            <div className="text-xl md:text-3xl font-display font-semibold text-white tracking-tight">
+                                {isStatsLoading ? "..." : autoRepayments.toLocaleString()}
+                            </div>
+                            <div className="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest">Auto-Repayments</div>
                         </div>
                     </div>
 

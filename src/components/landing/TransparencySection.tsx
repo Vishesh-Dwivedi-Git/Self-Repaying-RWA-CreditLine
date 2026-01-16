@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Activity, Globe, ArrowRight, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTVLData, formatTVL } from "@/hooks/useTVLData";
 
 const TX_DATA = [
     { id: "0x8a...29f1", type: "Mint", amount: "50,000 USDC", protocol: "Mantle", time: "2s ago" },
@@ -70,6 +71,9 @@ const TxRow = ({ tx, index }: { tx: typeof TX_DATA[0], index: number }) => {
 };
 
 export function TransparencySection() {
+    // Live TVL data (no wallet required)
+    const { data: tvlData, isLoading: isTVLLoading } = useTVLData();
+    
     return (
         <section className="py-16 md:py-24 px-4 md:px-6 bg-[#050505] text-white border-t border-white/5">
             <div className="max-w-7xl mx-auto space-y-10 md:space-y-16">
@@ -135,9 +139,11 @@ export function TransparencySection() {
                         <div className="p-6 bg-gradient-to-b from-white/[0.02] to-transparent flex flex-col justify-center gap-8">
                             <div>
                                 <div className="text-sm text-gray-500 mb-1">Total Value Locked</div>
-                                <div className="text-3xl font-display font-medium text-white">$42.8M</div>
+                                <div className="text-3xl font-display font-medium text-white">
+                                    {isTVLLoading ? "..." : formatTVL(tvlData.totalTVL)}
+                                </div>
                                 <div className="text-xs text-[#C3F53C] flex items-center gap-1 mt-1">
-                                    <ArrowRight className="w-3 h-3 -rotate-45" /> +12.4% this week
+                                    <ArrowRight className="w-3 h-3 -rotate-45" /> Live from contract
                                 </div>
                             </div>
 
